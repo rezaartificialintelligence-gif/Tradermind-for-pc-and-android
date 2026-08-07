@@ -1,0 +1,1 @@
+- [TraderMind archive setup](tradermind-archive-setup.md) — نسخه‌های آرشیوی TraderMind به نصب وابستگی‌های خود بسته و گاهی حذف افزونه‌های اختیاری build نیاز دارند.
