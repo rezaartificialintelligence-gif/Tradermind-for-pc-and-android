@@ -32,6 +32,7 @@ import {
 import { formatDateFa } from "../lib/i18n";
 import { getByDay, getBySession } from "../services/performanceService";
 import { useAppStore } from "../store/useAppStore";
+import { useShallow } from "zustand/react/shallow";
 import { getTradingDateKey, getTradingDateRange, getTradingMonthKey } from "../lib/tradingTime";
 
 // ══════════════════════════════════════════════════════════════════
@@ -70,6 +71,9 @@ const RESULT_BG: Record<string, string> = {
   win: "bg-emerald-500/15", "partial-win": "bg-teal-500/15",
   loss: "bg-rose-500/15", "partial-loss": "bg-amber-500/15",
   open: "bg-blue-500/15",
+};
+const MOOD_EMOJI: Record<number, string> = {
+  1: "😞", 2: "😕", 3: "😐", 4: "🙂", 5: "😄",
 };
 
 // ── ساعت سلام
@@ -163,8 +167,27 @@ async function loadDashboardData(): Promise<DashboardData> {
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const tradingTimeMode = useAppStore(s => s.tradingTimeMode);
-  const brokerUtcOffsetMinutes = useAppStore(s => s.brokerUtcOffsetMinutes);
+  const {
+    tradingTimeMode,
+    brokerUtcOffsetMinutes,
+    dashShowTrades,
+    dashShowWinRate,
+    dashShowPnl,
+    dashShowAvgR,
+    dashShowRecentTrades,
+    dashShowLastJournal,
+    dashShowAdherence,
+  } = useAppStore(useShallow(s => ({
+    tradingTimeMode: s.tradingTimeMode,
+    brokerUtcOffsetMinutes: s.brokerUtcOffsetMinutes,
+    dashShowTrades: s.dashShowTrades,
+    dashShowWinRate: s.dashShowWinRate,
+    dashShowPnl: s.dashShowPnl,
+    dashShowAvgR: s.dashShowAvgR,
+    dashShowRecentTrades: s.dashShowRecentTrades,
+    dashShowLastJournal: s.dashShowLastJournal,
+    dashShowAdherence: s.dashShowAdherence,
+  })));
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [rangeKey, setRangeKey] = useState<RangeKey>("week");
@@ -686,32 +709,52 @@ export default function Dashboard() {
               <BarChart3 className="w-8 h-8 opacity-20" />
               <p className="text-sm">هیچ معامله‌ای در {RANGE_LABELS[rangeKey]} ثبت نشده است.</p>
             </div>
+          ) : !dashShowTrades && !dashShowWinRate && !dashShowPnl && !dashShowAvgR ? (
+            <div className="flex flex-col items-center gap-2 py-6 text-center text-muted-foreground">
+              <LayoutDashboard className="w-8 h-8 opacity-25" />
+              <p className="text-sm">همه معیارهای این بخش در تنظیمات پنهان شده‌اند.</p>
+              <Link href="/settings">
+                <Button variant="outline" size="sm">شخصی‌سازی داشبورد</Button>
+              </Link>
+            </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <StatCard
-                label="تعداد معاملات"
-                value={rangedStats.total.toLocaleString("fa-IR")}
-                sub={`${rangedStats.closedCount.toLocaleString("fa-IR")} بسته`}
-              />
-              <StatCard
-                label="درصد برد"
-                value={`${rangedStats.winRate.toFixed(1)}٪`}
-                valueClass={rangedStats.winRate >= 50 ? "text-emerald-500" : "text-rose-500"}
-              />
-              <StatCard
-                label="سود / ضرر"
-                value={`${rangedStats.totalPnl >= 0 ? "+" : ""}$${rangedStats.totalPnl.toFixed(2)}`}
-                valueClass={rangedStats.totalPnl >= 0 ? "text-emerald-500" : "text-rose-500"}
-              />
-              <StatCard
-                label="میانگین R"
-                value={rangedStats.avgR != null ? `${rangedStats.avgR.toFixed(2)}R` : "—"}
-                valueClass={
-                  rangedStats.avgR == null ? undefined
-                  : rangedStats.avgR >= 0 ? "text-emerald-500"
-                  : "text-rose-500"
-                }
-              />
+              {dashShowTrades && (
+                <StatCard
+                  label="تعداد معاملات"
+                  value={rangedStats.total.toLocaleString("fa-IR")}
+                  sub={`${rangedStats.closedCount.toLocaleString("fa-IR")} بسته`}
+                  accent="blue"
+                />
+              )}
+              {dashShowWinRate && (
+                <StatCard
+                  label="درصد برد"
+                  value={`${rangedStats.winRate.toFixed(1)}٪`}
+                  valueClass={rangedStats.winRate >= 50 ? "text-emerald-500" : "text-rose-500"}
+                  accent="emerald"
+                />
+              )}
+              {dashShowPnl && (
+                <StatCard
+                  label="سود / ضرر"
+                  value={`${rangedStats.totalPnl >= 0 ? "+" : ""}$${rangedStats.totalPnl.toFixed(2)}`}
+                  valueClass={rangedStats.totalPnl >= 0 ? "text-emerald-500" : "text-rose-500"}
+                  accent={rangedStats.totalPnl >= 0 ? "emerald" : "rose"}
+                />
+              )}
+              {dashShowAvgR && (
+                <StatCard
+                  label="میانگین R"
+                  value={rangedStats.avgR != null ? `${rangedStats.avgR.toFixed(2)}R` : "—"}
+                  valueClass={
+                    rangedStats.avgR == null ? undefined
+                    : rangedStats.avgR >= 0 ? "text-emerald-500"
+                    : "text-rose-500"
+                  }
+                  accent="violet"
+                />
+              )}
             </div>
           )}
         </CardContent>
@@ -870,10 +913,10 @@ export default function Dashboard() {
       )}
 
       {/* ━━━━━━━━━━━━━━━━ 5. معاملات اخیر + ژورنال‌ها ━━━━━━━━━━━━━━━━ */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className={`grid gap-4 ${dashShowRecentTrades && dashShowLastJournal ? "lg:grid-cols-2" : ""}`}>
 
         {/* آخرین معاملات */}
-        <Card className="flex flex-col">
+        {dashShowRecentTrades && <Card className="flex flex-col">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
@@ -921,10 +964,10 @@ export default function Dashboard() {
               </div>
             )}
           </CardContent>
-        </Card>
+        </Card>}
 
         {/* آخرین ژورنال‌ها */}
-        <Card className="flex flex-col">
+        {dashShowLastJournal && <Card className="flex flex-col">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-base flex items-center gap-2">
@@ -963,11 +1006,11 @@ export default function Dashboard() {
               </div>
             )}
           </CardContent>
-        </Card>
+        </Card>}
       </div>
 
       {/* ━━━━━━━━━━━━━━━━ 6. آخرین استراتژی + پایبندی ━━━━━━━━━━━━━━━━ */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className={`grid gap-4 ${lastUsedStrategy && dashShowAdherence ? "lg:grid-cols-2" : ""}`}>
 
         {/* آخرین استراتژی */}
         {lastUsedStrategy && (
@@ -995,7 +1038,7 @@ export default function Dashboard() {
         )}
 
         {/* پایبندی به استراتژی */}
-        <Card>
+        {dashShowAdherence && <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Shield className="w-4 h-4 text-primary" /> پایبندی به قوانین استراتژی
@@ -1027,7 +1070,7 @@ export default function Dashboard() {
               </div>
             )}
           </CardContent>
-        </Card>
+        </Card>}
       </div>
 
       {/* ━━━━━━━━━━━━━━━━ 7. نمودارهای تحلیلی ━━━━━━━━━━━━━━━━ */}
@@ -1387,13 +1430,21 @@ function KpiCard({
   );
 }
 
-function StatCard({ label, value, sub, valueClass }: {
+function StatCard({ label, value, sub, valueClass, accent = "blue" }: {
   label: string; value: string; sub?: string; valueClass?: string;
+  accent?: "blue" | "emerald" | "rose" | "violet";
 }) {
+  const accentStyles = {
+    blue: "from-blue-500/15 to-transparent border-blue-500/20",
+    emerald: "from-emerald-500/15 to-transparent border-emerald-500/20",
+    rose: "from-rose-500/15 to-transparent border-rose-500/20",
+    violet: "from-violet-500/15 to-transparent border-violet-500/20",
+  }[accent];
   return (
-    <div className="p-3 rounded-xl border bg-card/50 space-y-1">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className={`text-xl font-bold ${valueClass ?? ""}`}>{value}</p>
+    <div className={`relative overflow-hidden p-4 rounded-2xl border bg-gradient-to-br ${accentStyles} bg-card/70 space-y-1.5`}>
+      <div className="absolute -left-5 -top-5 h-16 w-16 rounded-full bg-primary/5 blur-xl" />
+      <p className="relative text-xs font-medium text-muted-foreground">{label}</p>
+      <p className={`relative text-2xl font-bold tracking-tight ${valueClass ?? ""}`}>{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </div>
   );

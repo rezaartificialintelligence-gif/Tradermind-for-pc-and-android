@@ -782,7 +782,7 @@ export default function Settings() {
         <SwitchRow label="درصد برد" checked={store.dashShowWinRate} onChange={store.setDashShowWinRate} />
         <SwitchRow label="مجموع سود/زیان" checked={store.dashShowPnl} onChange={store.setDashShowPnl} />
         <SwitchRow label="میانگین R:R" checked={store.dashShowAvgR} onChange={store.setDashShowAvgR} />
-        <SwitchRow label="آخرین تحلیل‌ها" checked={store.dashShowRecentTrades} onChange={store.setDashShowRecentTrades} />
+        <SwitchRow label="آخرین معاملات" checked={store.dashShowRecentTrades} onChange={store.setDashShowRecentTrades} />
         <SwitchRow label="آخرین ژورنال روزانه" checked={store.dashShowLastJournal} onChange={store.setDashShowLastJournal} />
         <SwitchRow label="میزان پایبندی به استراتژی" checked={store.dashShowAdherence} onChange={store.setDashShowAdherence} />
       </Section>
