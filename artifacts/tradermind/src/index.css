@@ -400,6 +400,19 @@ input:-webkit-autofill:focus {
 .dark .rounded-xl.border.bg-card,
 .dark [class*="bg-card"].border { box-shadow: 0 10px 28px hsl(204 40% 4% / .22); }
 
+/* Product-level rhythm: these classes are shared by the dashboard shell and
+   keep the redesigned surfaces distinct from the older utility-only cards. */
+.dashboard-panel {
+  border-color: hsl(var(--card-border) / .72);
+  box-shadow: 0 12px 34px hsl(var(--foreground) / .055);
+}
+.dashboard-panel:hover {
+  border-color: hsl(var(--primary) / .26);
+  box-shadow: 0 16px 40px hsl(var(--foreground) / .085);
+}
+.page-content > * { animation: pageEnter .32s cubic-bezier(.22, .8, .24, 1); }
+.dashboard-hero button { position: relative; z-index: 1; }
+
 /* Button hierarchy */
 button, a { -webkit-tap-highlight-color: transparent; }
 button:not([data-radix-collection-item]) { font-weight: 600; }

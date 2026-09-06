@@ -60,14 +60,14 @@ function NavItem({
       className={cn(
         "group flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all text-sm font-medium min-h-[46px]",
         isActive
-          ? "bg-sidebar-primary/15 text-sidebar-primary font-semibold shadow-sm"
+          ? "bg-sidebar-primary text-sidebar-primary-foreground font-semibold shadow-lg shadow-sidebar-primary/20"
           : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
       )}
       onClick={onClick}
     >
       <Icon className="h-5 w-5 shrink-0" />
 
-      <span>{label}</span>
+      <span className="truncate">{label}</span>
 
       {isActive && (
         <ChevronLeft className="h-4 w-4 ms-auto opacity-60 group-hover:translate-x-[-2px] transition-transform" />
@@ -430,7 +430,7 @@ export function Sidebar() {
             shrink-0
           "
           style={{
-            minHeight: "56px",
+            minHeight: "68px",
           }}
         >
 
@@ -456,7 +456,10 @@ export function Sidebar() {
               />
             </div>
 
-            {appName}
+            <div>
+              <div>{appName}</div>
+              <div className="mt-0.5 text-[10px] font-medium tracking-[.14em] text-sidebar-foreground/40">TRADING JOURNAL</div>
+            </div>
           </div>
 
 

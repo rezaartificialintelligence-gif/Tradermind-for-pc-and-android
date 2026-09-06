@@ -18,7 +18,7 @@ export function Layout({ children }: LayoutProps) {
       >
         {/* روی دسکتاپ padding bottom را حذف می‌کنیم */}
         <style>{`@media (min-width: 768px) { main { padding-bottom: 0 !important; } }`}</style>
-        <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[1480px] mx-auto w-full">
+        <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[1480px] mx-auto w-full page-content">
           {children}
         </div>
       </main>

@@ -503,30 +503,37 @@ export default function Dashboard() {
   return (
     <div className="space-y-5 animate-in fade-in duration-400" dir="rtl">
 
-      {/* ━━━━━━━━━━━━━━━━ 1. خوش‌آمدگویی ━━━━━━━━━━━━━━━━ */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{getGreeting()}</h1>
-          <p className="text-muted-foreground mt-1">{getGreetingSub()}</p>
+      {/* ━━━━━━━━━━━━━━━━ 1. هدر داشبورد ━━━━━━━━━━━━━━━━ */}
+      <section className="dashboard-hero relative overflow-hidden rounded-[1.75rem] border border-primary/20 bg-gradient-to-br from-primary/[.16] via-card to-card shadow-[0_18px_60px_hsl(var(--primary)/.10)]">
+        <div className="absolute -left-16 -top-24 h-64 w-64 rounded-full bg-primary/15 blur-3xl" aria-hidden="true" />
+        <div className="absolute -bottom-24 right-1/3 h-48 w-48 rounded-full bg-accent/10 blur-3xl" aria-hidden="true" />
+        <div className="relative flex flex-col gap-7 p-5 sm:p-7 lg:flex-row lg:items-end lg:justify-between lg:p-8">
+          <div className="max-w-2xl">
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-primary">
+              <span className="rounded-full bg-primary/10 px-3 py-1.5">مرکز فرمان TraderMind</span>
+              <span className="rounded-full border border-border/70 bg-background/40 px-3 py-1.5 text-muted-foreground">
+                داشبورد عملکرد
+              </span>
+            </div>
+            <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{getGreeting()}</h1>
+            <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground sm:text-base">{getGreetingSub()}</p>
+          </div>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Link href="/analysis/new" className="flex-1 sm:flex-none">
+              <Button className="h-11 w-full gap-2 rounded-xl px-5 shadow-lg shadow-primary/20">
+                <ActivitySquare className="w-4 h-4" />
+                <span>شروع تحلیل جدید</span>
+              </Button>
+            </Link>
+            <Link href="/journal/trades/new" className="flex-1 sm:flex-none">
+              <Button variant="secondary" className="h-11 w-full gap-2 rounded-xl border border-border/80 px-5">
+                <Plus className="w-4 h-4" />
+                <span>ثبت معامله</span>
+              </Button>
+            </Link>
+          </div>
         </div>
-        {/* دکمه‌های اصلی */}
-        <div className="flex gap-2 shrink-0">
-          <Link href="/analysis/new">
-            <Button className="gap-2">
-              <ActivitySquare className="w-4 h-4" />
-              <span className="hidden sm:inline">شروع تحلیل جدید</span>
-              <span className="sm:hidden">تحلیل</span>
-            </Button>
-          </Link>
-          <Link href="/journal/trades/new">
-            <Button variant="secondary" className="gap-2">
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">ثبت معامله</span>
-              <span className="sm:hidden">معامله</span>
-            </Button>
-          </Link>
-        </div>
-      </div>
+      </section>
 
       {/* ━━━━━━━━━━━━━━━━ 2. تحلیل‌های نیمه‌کاره ━━━━━━━━━━━━━━━━ */}
       {inProgressSessions.length > 0 && (
@@ -583,16 +590,16 @@ export default function Dashboard() {
       )}
 
       {/* ━━━━━━━━━━━━━━━━ 3. وضعیت امروز + شروع تحلیل ━━━━━━━━━━━━━━━━ */}
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-5 lg:grid-cols-2">
 
         {/* وضعیت امروز */}
-        <Card>
-          <CardHeader className="pb-3">
+        <Card className="dashboard-panel">
+          <CardHeader className="border-b border-border/60 pb-4">
             <CardTitle className="text-base flex items-center gap-2">
               <Clock className="w-4 h-4 text-primary" /> وضعیت امروز
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pt-5">
             {data?.todayJournal ? (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
@@ -626,14 +633,16 @@ export default function Dashboard() {
         </Card>
 
         {/* شروع تحلیل جدید */}
-        <Card className="flex flex-col justify-between bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
-          <CardContent className="p-6 flex flex-col h-full justify-between gap-4">
+        <Card className="dashboard-panel relative flex flex-col justify-between overflow-hidden border-primary/25 bg-gradient-to-br from-primary/[.16] via-primary/[.06] to-card">
+          <div className="absolute -left-10 bottom-0 h-36 w-36 rounded-full bg-primary/10 blur-2xl" aria-hidden="true" />
+          <CardContent className="relative flex h-full flex-col justify-between gap-6 p-6 sm:p-7">
             <div>
-              <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center mb-4">
-                <ActivitySquare className="w-6 h-6 text-primary" />
+              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
+                <ActivitySquare className="w-6 h-6 text-primary-foreground" />
               </div>
-              <h3 className="text-lg font-bold">شروع تحلیل جدید</h3>
-              <p className="text-sm text-muted-foreground mt-1">
+              <p className="mb-1 text-xs font-semibold uppercase tracking-[.16em] text-primary">تمرکز بعدی</p>
+              <h3 className="text-xl font-bold">شروع تحلیل جدید</h3>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 استراتژی خود را انتخاب کن و تحلیل گام‌به‌گام را شروع کن.
               </p>
             </div>
@@ -646,7 +655,7 @@ export default function Dashboard() {
               {lastUsedStrategy && (
                 <Link href={`/analysis/new?strategyId=${lastUsedStrategy.strategy.id}`}>
                   <Button variant="outline" size="icon" title="شروع با آخرین استراتژی">
-                    <Zap className="w-4 h-4" />
+                    <Zap className="w-4 h-4 text-primary" />
                   </Button>
                 </Link>
               )}
@@ -656,8 +665,8 @@ export default function Dashboard() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━ 4. خلاصه عملکرد ━━━━━━━━━━━━━━━━ */}
-      <Card>
-        <CardHeader className="pb-3">
+      <Card className="dashboard-panel">
+        <CardHeader className="border-b border-border/60 pb-4">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-primary" /> خلاصه عملکرد
