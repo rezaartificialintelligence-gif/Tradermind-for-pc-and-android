@@ -5,6 +5,12 @@
 import { Trade, PostTradeReviewData } from '../db/database';
 import { avg, median, stdDev, toDateStr, isWin, isLoss, isClosed, getPTR, flagCount } from '../lib/tradeHelpers';
 import { getTradingDateParts, getTradingMonthKey } from '../lib/tradingTime';
+import {
+  computeDrawdown,
+  computeExpectancy as computeCanonicalExpectancy,
+  computeProfitFactor as computeCanonicalProfitFactor,
+  computeTotalNetPnl,
+} from '../core/metrics/canonical';
 
 // ─────────────────────────────────────────────────────────────────
 // Helpers
@@ -62,18 +68,16 @@ export function calcBaseMetrics(trades: Trade[]): BaseMetrics {
   const winRate = closed.length > 0 ? wins.length / closed.length : null;
   const avgWin = avg(winRs);
   const avgLoss = avg(lossRs);
-  const expectancy = winRate !== null && avgWin !== null && avgLoss !== null
-    ? winRate * avgWin + (1 - winRate) * avgLoss : null;
-  const totalWin = wins.reduce((s, t) => s + Math.max(0, t.profitLoss ?? 0), 0);
-  const totalLoss = Math.abs(losses.reduce((s, t) => s + Math.min(0, t.profitLoss ?? 0), 0));
+  const expectancy = computeCanonicalExpectancy(trades).expectancyR;
+  const profitFactor = computeCanonicalProfitFactor(trades).profitFactor;
   return {
     count: closed.length, winCount: wins.length, lossCount: losses.length, breakEvenCount: breakEvens.length,
     winRate, avgR: avg(Rs), medianR: median(Rs), expectancy,
-    profitFactor: totalLoss > 0 ? totalWin / totalLoss : null,
+    profitFactor,
     avgWin, avgLoss,
     maxWin: winRs.length ? Math.max(...winRs) : null,
     maxLoss: lossRs.length ? Math.min(...lossRs) : null,
-    totalPnL: closed.reduce((s, t) => s + (t.profitLoss ?? 0), 0),
+    totalPnL: computeTotalNetPnl(trades),
     sampleWarning: closed.length < 20,
   };
 }
@@ -99,13 +103,7 @@ export function getPerformanceProfile(trades: Trade[]): PerformanceProfile {
   const cv = risks.length >= 2 ? (stdDev(risks)! / (avg(risks) || 1)) : null;
   const holdings = closed.filter(t => t.closedAt !== null).map(t => (t.closedAt! - t.openedAt) / 60000);
   const withReview = trades.filter(t => { try { const r = JSON.parse(t.postTradeReview) as PostTradeReviewData; return r.completedAt > 0; } catch { return false; } });
-  let maxDD = 0, peak = 0, equity = 0;
-  [...closed].sort((a, b) => a.openedAt - b.openedAt).forEach(t => {
-    equity += (t.rMultiple ?? 0);
-    if (equity > peak) peak = equity;
-    const dd = peak > 0 ? (peak - equity) / peak : 0;
-    if (dd > maxDD) maxDD = dd;
-  });
+  const maxDD = computeDrawdown(trades).maxDrawdownPct;
   // trades per week
   let freq: number | null = null;
   if (closed.length >= 2) {
@@ -114,7 +112,7 @@ export function getPerformanceProfile(trades: Trade[]): PerformanceProfile {
   }
   return {
     ...base, avgRisk: avg(risks), riskConsistency: cv,
-    maxDrawdownPct: maxDD > 0 ? maxDD * 100 : null,
+    maxDrawdownPct: maxDD,
     tradeFrequency: freq, dateRange: dateRange(trades),
     holdingTimeAvgMin: avg(holdings),
     completedReviews: withReview.length,

@@ -5,6 +5,7 @@
 
 import { Trade } from '../db/database';
 import { avg, median, stdDev, isWin, isLoss, isClosed } from '../lib/tradeHelpers';
+import { getTradeNetPnl } from '../lib/tradeClassification';
 import { getTradingDateKey, getTradingDateParts, getTradingMonthKey } from '../lib/tradingTime';
 
 // ─────────────────────────────────────────────────────────────────
@@ -443,7 +444,7 @@ export function getDrawdownAnalysis(trades: Trade[], startEquity: number): Drawd
   const curve: DrawdownPoint[] = [];
 
   sorted.forEach(t => {
-    equity += (t.profitLoss ?? 0) - (t.fees ?? 0);
+    equity += getTradeNetPnl(t) ?? 0;
     if (equity > peak) {
       if (ddStart && !recoveryDate) recoveryDate = dateStr(t.closedAt!);
       peak = equity;
@@ -1056,6 +1057,20 @@ export interface PreTradeRiskCalc {
   warning: string | null;
 }
 
+function invalidPreTradeRisk(missingFields: string[], warning: string): PreTradeRiskCalc {
+  return {
+    slDistance: null,
+    slDistancePct: null,
+    monetaryRisk: null,
+    percentageRisk: null,
+    positionSize: null,
+    potentialReward: null,
+    plannedRR: null,
+    missingFields,
+    warning,
+  };
+}
+
 export function calculatePreTradeRisk(params: {
   accountEquity: number | null;
   entryPrice: number | null;
@@ -1065,39 +1080,70 @@ export function calculatePreTradeRisk(params: {
   riskAmount: number | null;
   positionSize: number | null;
   pointValue?: number; // pip/point value for forex (default 1)
+  direction?: 'long' | 'short';
 }): PreTradeRiskCalc {
-  const { accountEquity, entryPrice, stopLoss, takeProfit, riskPct, riskAmount } = params;
+  const {
+    accountEquity,
+    entryPrice,
+    stopLoss,
+    takeProfit,
+    riskPct,
+    riskAmount,
+    positionSize,
+    pointValue = 1,
+    direction = 'long',
+  } = params;
   const missing: string[] = [];
-  if (!entryPrice) missing.push('قیمت ورود');
-  if (!stopLoss) missing.push('حد ضرر');
+  if (entryPrice === null || !Number.isFinite(entryPrice) || entryPrice <= 0) missing.push('قیمت ورود');
+  if (stopLoss === null || !Number.isFinite(stopLoss) || stopLoss <= 0) missing.push('حد ضرر');
 
   if (missing.length) {
-    return {
-      slDistance: null, slDistancePct: null, monetaryRisk: null, percentageRisk: null,
-      positionSize: null, potentialReward: null, plannedRR: null, missingFields: missing,
-      warning: 'محاسبه ریسک با داده‌های موجود امکان‌پذیر نیست.',
-    };
+    return invalidPreTradeRisk(missing, 'محاسبه ریسک با داده‌های موجود امکان‌پذیر نیست.');
   }
 
   const slDist = Math.abs(entryPrice! - stopLoss!);
+  if (slDist === 0) {
+    return invalidPreTradeRisk(['فاصله حد ضرر'], 'قیمت ورود و حد ضرر نباید برابر باشند.');
+  }
+
+  if (direction === 'long' && stopLoss! >= entryPrice!) {
+    return invalidPreTradeRisk(['حد ضرر در سمت درست'], 'در معامله خرید، حد ضرر باید پایین‌تر از قیمت ورود باشد.');
+  }
+  if (direction === 'short' && stopLoss! <= entryPrice!) {
+    return invalidPreTradeRisk(['حد ضرر در سمت درست'], 'در معامله فروش، حد ضرر باید بالاتر از قیمت ورود باشد.');
+  }
+  if (takeProfit !== null && Number.isFinite(takeProfit)) {
+    const validTakeProfit = direction === 'long' ? takeProfit > entryPrice! : takeProfit < entryPrice!;
+    if (!validTakeProfit) {
+      return invalidPreTradeRisk(['هدف سود در سمت درست'], direction === 'long'
+        ? 'در معامله خرید، هدف سود باید بالاتر از قیمت ورود باشد.'
+        : 'در معامله فروش، هدف سود باید پایین‌تر از قیمت ورود باشد.');
+    }
+  }
+
+  const safePointValue = Number.isFinite(pointValue) && pointValue > 0 ? pointValue : 1;
   const slDistPct = (slDist / entryPrice!) * 100;
 
   let monRisk: number | null = null;
   let pctRisk: number | null = null;
   let posSz: number | null = null;
 
-  if (riskAmount !== null) {
+  if (riskAmount !== null && Number.isFinite(riskAmount) && riskAmount > 0) {
     monRisk = riskAmount;
-    if (accountEquity) pctRisk = (riskAmount / accountEquity) * 100;
-    if (slDist > 0) posSz = riskAmount / slDist;
-  } else if (riskPct !== null && accountEquity) {
+    if (accountEquity !== null && Number.isFinite(accountEquity) && accountEquity > 0) {
+      pctRisk = (riskAmount / accountEquity) * 100;
+    }
+    posSz = riskAmount / (slDist * safePointValue);
+  } else if (riskPct !== null && Number.isFinite(riskPct) && riskPct > 0 && accountEquity !== null && Number.isFinite(accountEquity) && accountEquity > 0) {
     monRisk = (riskPct / 100) * accountEquity;
     pctRisk = riskPct;
-    if (slDist > 0) posSz = monRisk / slDist;
-  } else if (params.positionSize !== null) {
-    posSz = params.positionSize;
-    monRisk = slDist * posSz;
-    if (accountEquity) pctRisk = (monRisk / accountEquity) * 100;
+    posSz = monRisk / (slDist * safePointValue);
+  } else if (positionSize !== null && Number.isFinite(positionSize) && positionSize > 0) {
+    posSz = positionSize;
+    monRisk = slDist * positionSize * safePointValue;
+    if (accountEquity !== null && Number.isFinite(accountEquity) && accountEquity > 0) {
+      pctRisk = (monRisk / accountEquity) * 100;
+    }
   } else {
     missing.push('ریسک مقداری یا درصدی');
   }
@@ -1106,8 +1152,8 @@ export function calculatePreTradeRisk(params: {
   let rr: number | null = null;
   if (takeProfit !== null && entryPrice !== null) {
     const tpDist = Math.abs(takeProfit - entryPrice);
-    potRew = (posSz ?? 1) * tpDist;
-    if (slDist > 0) rr = tpDist / slDist;
+    potRew = posSz !== null ? posSz * tpDist * safePointValue : null;
+    rr = tpDist / slDist;
   }
 
   return {

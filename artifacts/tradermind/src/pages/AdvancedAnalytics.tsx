@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/useAppStore';
+import { useAccountFilter, AccountFilter } from '@/components/AccountFilter';
 
 // ─── Helpers ──────────────────────────────────────────────────────
 function isWin(t: Trade)  { return t.result === 'win' || t.result === 'partial-win'; }
@@ -130,6 +131,7 @@ export default function AdvancedAnalytics() {
   const [allTrades, setAllTrades]   = useState<Trade[]>([]);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading]   = useState(true);
+  const { accounts, selectedAccountId, setSelectedAccountId, filterByAccount } = useAccountFilter();
 
   useEffect(() => {
     let cancelled = false;
@@ -152,10 +154,11 @@ export default function AdvancedAnalytics() {
 
   // ── Filtered trades ──────────────────────────────────────────
   const trades = useMemo(() => {
-    if (range === 'all') return allTrades;
+    const byAccount = filterByAccount(allTrades);
+    if (range === 'all') return byAccount;
     const { from, to } = getDateRange(range as Exclude<TimeRangeKey, 'custom'>);
-    return filterTradesByRange(allTrades, from, to);
-  }, [allTrades, range, tradingTimeMode, brokerUtcOffsetMinutes]);
+    return filterTradesByRange(byAccount, from, to);
+  }, [allTrades, range, tradingTimeMode, brokerUtcOffsetMinutes, selectedAccountId]);
 
   const closedTrades = useMemo(() => trades.filter(isClosed), [trades]);
 
@@ -900,18 +903,21 @@ export default function AdvancedAnalytics() {
             {closedTrades.length} معامله بسته · {trades.length} کل
           </p>
         </div>
-        <Select value={range} onValueChange={v => setRange(v as RangeKey)}>
-          <SelectTrigger className="w-32 h-8 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">همه زمان‌ها</SelectItem>
-            <SelectItem value="week">این هفته</SelectItem>
-            <SelectItem value="month">این ماه</SelectItem>
-            <SelectItem value="3months">۳ ماه اخیر</SelectItem>
-            <SelectItem value="year">امسال</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <AccountFilter accounts={accounts} selectedAccountId={selectedAccountId} onChange={setSelectedAccountId} />
+          <Select value={range} onValueChange={v => setRange(v as RangeKey)}>
+            <SelectTrigger className="w-32 h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">همه زمان‌ها</SelectItem>
+              <SelectItem value="week">این هفته</SelectItem>
+              <SelectItem value="month">این ماه</SelectItem>
+              <SelectItem value="3months">۳ ماه اخیر</SelectItem>
+              <SelectItem value="year">امسال</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Sample size warning */}

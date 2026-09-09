@@ -109,6 +109,53 @@ describe('getTrades', () => {
     const eurTrades = await getTrades({ symbol: 'EURUSD' });
     expect(eurTrades.length).toBe(2);
   });
+
+  // این تست‌ها مربوط به باگی هستند که پیش‌تر وجود داشت: وقتی چند فیلتر با هم
+  // ترکیب می‌شدند (مثلاً بازهٔ تاریخ + استراتژی)، فقط یکی از آن‌ها واقعاً اعمال
+  // می‌شد و بقیه بی‌صدا نادیده گرفته می‌شدند.
+  it('باید با ترکیب status و accountId هر دو فیلتر را اعمال کند', async () => {
+    await db.trades.bulkAdd([
+      makeTrade({ status: 'closed', accountId: 'acc-1' }),
+      makeTrade({ status: 'closed', accountId: 'acc-2' }),
+      makeTrade({ status: 'open', accountId: 'acc-1' }),
+    ]);
+    const result = await getTrades({ status: 'closed', accountId: 'acc-1' });
+    expect(result.length).toBe(1);
+    expect(result[0].status).toBe('closed');
+    expect(result[0].accountId).toBe('acc-1');
+  });
+
+  it('باید با ترکیب بازهٔ تاریخ و strategyId هر دو فیلتر را اعمال کند', async () => {
+    const now = Date.now();
+    await db.trades.bulkAdd([
+      makeTrade({ strategyId: 'strat-a', openedAt: now - 1000 }),
+      makeTrade({ strategyId: 'strat-b', openedAt: now - 1000 }),
+      makeTrade({ strategyId: 'strat-a', openedAt: now - 10_000_000 }), // خارج از بازه
+    ]);
+    const result = await getTrades({
+      strategyId: 'strat-a',
+      fromDate: now - 5000,
+      toDate: now + 5000,
+    });
+    expect(result.length).toBe(1);
+    expect(result[0].strategyId).toBe('strat-a');
+  });
+
+  it('باید با ترکیب بازهٔ تاریخ و symbol هر دو فیلتر را اعمال کند', async () => {
+    const now = Date.now();
+    await db.trades.bulkAdd([
+      makeTrade({ symbol: 'XAUUSD', openedAt: now - 1000 }),
+      makeTrade({ symbol: 'EURUSD', openedAt: now - 1000 }),
+      makeTrade({ symbol: 'XAUUSD', openedAt: now - 10_000_000 }), // خارج از بازه
+    ]);
+    const result = await getTrades({
+      symbol: 'XAUUSD',
+      fromDate: now - 5000,
+      toDate: now + 5000,
+    });
+    expect(result.length).toBe(1);
+    expect(result[0].symbol).toBe('XAUUSD');
+  });
 });
 
 describe('getTradeById', () => {

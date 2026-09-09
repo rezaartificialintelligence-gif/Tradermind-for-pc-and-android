@@ -3,6 +3,25 @@ import { getTradingDateParts, getTradingTimeConfig, type TradingTimeConfig } fro
 
 export type DetectedTradingSession = 'asia' | 'london' | 'overlap' | 'new-york' | 'other';
 
+export function getTradeTradingCosts(
+  trade: Pick<Trade, 'fees'> & Partial<Pick<Trade, 'commission' | 'spread'>>,
+): number {
+  const values: unknown[] = [trade.fees, trade.commission, trade.spread];
+  return values.reduce<number>(
+    (sum, value) => sum + (typeof value === 'number' && Number.isFinite(value) ? Math.abs(value) : 0),
+    0,
+  );
+}
+
+/** سود/زیان خالص پس از کسر همه هزینه‌های ثبت‌شده معامله. */
+export function getTradeNetPnl(
+  trade: Pick<Trade, 'profitLoss' | 'fees'> & Partial<Pick<Trade, 'commission' | 'spread'>>,
+): number | null {
+  return typeof trade.profitLoss === 'number' && Number.isFinite(trade.profitLoss)
+    ? trade.profitLoss - getTradeTradingCosts(trade)
+    : null;
+}
+
 /**
  * Session windows are expressed in the selected trading clock, not in the
  * machine's local timezone. The overlap is intentionally checked before the

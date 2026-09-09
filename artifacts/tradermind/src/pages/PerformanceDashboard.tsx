@@ -32,6 +32,7 @@ import type {
 } from '../services/performanceService';
 import { getPostLossBehavior, getPostWinBehavior } from '../services/riskService';
 import { useAppStore } from '../store/useAppStore';
+import { useAccountFilter, AccountFilter } from '../components/AccountFilter';
 
 // ─────────────────────────────────────────────────────────────────
 // UI Helpers
@@ -172,6 +173,7 @@ export default function PerformanceDashboard() {
     () => JSON.parse(localStorage.getItem('perf_preferred_sessions') ?? '["london","overlap"]')
   );
   const [timelineGranularity, setTimelineGranularity] = useState<'week' | 'month'>('month');
+  const { accounts, selectedAccountId, setSelectedAccountId, filterByAccount } = useAccountFilter();
 
   useEffect(() => {
     Promise.all([
@@ -185,11 +187,12 @@ export default function PerformanceDashboard() {
   }, []);
 
   const filtered = useMemo(() => {
-    if (timeRange === 'all') return trades;
+    const byAccount = filterByAccount(trades);
+    if (timeRange === 'all') return byAccount;
     const now = Date.now();
     const ms = { '3m': 90, '6m': 180, '1y': 365 }[timeRange] * 86400000;
-    return trades.filter(t => t.openedAt >= now - ms);
-  }, [trades, timeRange, tradingTimeMode, brokerUtcOffsetMinutes]);
+    return byAccount.filter(t => t.openedAt >= now - ms);
+  }, [trades, timeRange, tradingTimeMode, brokerUtcOffsetMinutes, selectedAccountId]);
 
   const profile = useMemo(() => getPerformanceProfile(filtered), [filtered]);
   const scorecard = useMemo(() => getScorecard(filtered), [filtered]);
@@ -277,15 +280,18 @@ export default function PerformanceDashboard() {
               <p className="text-xs text-muted-foreground">{filtered.filter(t => t.status === 'closed').length} معامله بسته‌شده تحلیل شد</p>
             </div>
           </div>
-          <Select value={timeRange} onValueChange={v => setTimeRange(v as typeof timeRange)}>
-            <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">همه</SelectItem>
-              <SelectItem value="3m">۳ ماه</SelectItem>
-              <SelectItem value="6m">۶ ماه</SelectItem>
-              <SelectItem value="1y">۱ سال</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <AccountFilter accounts={accounts} selectedAccountId={selectedAccountId} onChange={setSelectedAccountId} />
+            <Select value={timeRange} onValueChange={v => setTimeRange(v as typeof timeRange)}>
+              <SelectTrigger className="h-8 w-24 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">همه</SelectItem>
+                <SelectItem value="3m">۳ ماه</SelectItem>
+                <SelectItem value="6m">۶ ماه</SelectItem>
+                <SelectItem value="1y">۱ سال</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <div className="max-w-5xl mx-auto mt-2 flex gap-1 overflow-x-auto scrollbar-hide pb-0.5">
           {TAB_LIST.map(t => {

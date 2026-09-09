@@ -47,6 +47,7 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { toast } from 'sonner';
 import { logger } from '@/lib/logger';
+import { useAccountFilter, AccountFilter } from '@/components/AccountFilter';
 
 import {
   UserCircle2, TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Info, XCircle,
@@ -987,6 +988,7 @@ export default function TraderProfile() {
   const [corrections, setCorrections] = useState<Record<string, InsightCorrection>>({});
   const [snapshots, setSnapshots] = useState<ProfileSnapshot[]>([]);
   const [isLoadingDb, setIsLoadingDb] = useState(true);
+  const { accounts, selectedAccountId, setSelectedAccountId, filterByAccount } = useAccountFilter();
 
   const reloadCorrections = async () => {
     const data = await loadProfileCorrections();
@@ -1026,8 +1028,8 @@ export default function TraderProfile() {
   const profile = useMemo(() => {
     if (!trades || !strategies) return null;
     const stratList = strategies.map(s => ({ id: s.id, name: s.name }));
-    return computeTraderProfile(trades, stratList, 0, corrections);
-  }, [trades, strategies, corrections]);
+    return computeTraderProfile(filterByAccount(trades), stratList, 0, corrections);
+  }, [trades, strategies, corrections, selectedAccountId]);
 
   if (isLoadingDb || !profile) {
     return (
@@ -1070,6 +1072,7 @@ export default function TraderProfile() {
         </div>
         
         <div className="flex flex-wrap items-center gap-3">
+          <AccountFilter accounts={accounts} selectedAccountId={selectedAccountId} onChange={setSelectedAccountId} />
           <Badge variant="outline" className="px-4 py-1.5 text-sm bg-background border-border">
             <Activity className="w-4 h-4 ml-2 text-primary" />
             {profile.closedCount} معامله بسته
@@ -1104,7 +1107,7 @@ export default function TraderProfile() {
            <TabsContent value="perf-evolution" className="m-0"><PerformanceTab profile={profile} /></TabsContent>
            <TabsContent value="edge-evolution" className="m-0"><EdgeTab profile={profile} /></TabsContent>
            <TabsContent value="style" className="m-0"><StyleTab profile={profile} /></TabsContent>
-           <TabsContent value="coaching" className="m-0"><CoachingTab profile={profile} trades={trades ?? []} /></TabsContent>
+           <TabsContent value="coaching" className="m-0"><CoachingTab profile={profile} trades={filterByAccount(trades ?? [])} /></TabsContent>
            <TabsContent value="snapshots" className="m-0"><SnapshotsTab profile={profile} snapshots={snapshots} onReload={reloadSnapshots} /></TabsContent>
            <TabsContent value="privacy" className="m-0"><PrivacyTab corrections={corrections} profile={profile} onReload={reloadCorrections} /></TabsContent>
          </div>

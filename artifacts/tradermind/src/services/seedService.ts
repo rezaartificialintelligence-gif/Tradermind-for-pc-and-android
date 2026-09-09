@@ -6,7 +6,7 @@
  */
 
 import { db } from '../db/database';
-import type { Trade, Strategy } from '../db/database';
+import type { Trade, Strategy, Phase, Step } from '../db/database';
 
 const uuidv4 = (): string => crypto.randomUUID();
 import { invalidateAnalyticsCache } from './analyticsCacheService';
@@ -25,11 +25,7 @@ export interface SeedOptions {
 
 // ── داده‌های آزمایشی ──────────────────────────────────────────────────────────
 
-const SYMBOLS = [
-  'EURUSD', 'GBPUSD', 'USDJPY', 'USDCHF', 'AUDUSD', 'USDCAD', 'NZDUSD',
-  'XAUUSD', 'XAGUSD', 'BTCUSD', 'ETHUSD', 'GBPJPY', 'EURJPY', 'EURGBP',
-  'US30', 'US100', 'US500', 'BRENTOIL', 'NATGAS',
-];
+const SYMBOLS = ['XAUUSD', 'EURUSD'];
 
 const SESSIONS = ['london', 'newyork', 'asian', 'overlap'] as const;
 const DIRECTIONS = ['long', 'short'] as const;
@@ -246,9 +242,6 @@ export async function seedDatabase(options: SeedOptions = {}): Promise<void> {
  * برای seed سنگین 10k معامله از `seedDatabase()` استفاده کنید.
  */
 export async function seedInitialData(): Promise<void> {
-  const tradeCount = await db.trades.count();
-  if (tradeCount > 0) return; // قبلاً seed شده
-
   const strategyCount = await db.strategies.count();
   if (strategyCount === 0) {
     const sampleStrategies = [
@@ -263,6 +256,83 @@ export async function seedInitialData(): Promise<void> {
       } as Strategy))
     );
   }
+
+  // استراتژی‌های اولیه باید واقعاً قابل اجرا باشند. این repair فقط یک‌بار
+  // انجام می‌شود تا هر بار ورود به برنامه باعث scan و queryهای N+1 نشود.
+  let shouldRepairTemplates = true;
+  try {
+    shouldRepairTemplates = localStorage.getItem('tradermind-analysis-template-v1') !== 'done';
+  } catch {
+    // اگر localStorage در محیط محدود در دسترس نبود، repair را انجام می‌دهیم.
+  }
+
+  if (shouldRepairTemplates) {
+    const strategies = await db.strategies.toArray();
+    for (const strategy of strategies) {
+      const phaseCount = await db.phases.where('strategyId').equals(strategy.id).count();
+      if (phaseCount > 0) continue;
+
+      const now = Date.now();
+      const phaseDefinitions = [
+      {
+        name: 'زمینه و جهت بازار',
+        description: 'بازار، تایم‌فریم بالاتر و جهت غالب را بررسی کنید.',
+        steps: [
+          { name: 'زمینه بازار مشخص است؟', description: 'روند، رنج یا شرایط خاص بازار را ثبت کنید.', type: 'textarea' as const, required: true },
+          { name: 'بایاس تایم‌فریم بالاتر', description: 'جهت غالب را انتخاب کنید.', type: 'select' as const, required: true, options: JSON.stringify(['صعودی', 'نزولی', 'خنثی']) },
+        ],
+      },
+      {
+        name: 'ساختار و ستاپ',
+        description: 'ساختار قیمت و شروط ستاپ را بررسی کنید.',
+        steps: [
+          { name: 'ساختار قیمت تأیید شد؟', description: 'شکست، برگشت یا ادامه ساختار را ثبت کنید.', type: 'checkbox' as const, required: true },
+          { name: 'توضیح ستاپ', description: 'دلیل شکل‌گیری ستاپ را بنویسید.', type: 'textarea' as const, required: true },
+        ],
+      },
+      {
+        name: 'تصمیم و مدیریت ریسک',
+        description: 'قبل از ورود، ریسک و تصمیم نهایی را مشخص کنید.',
+        steps: [
+          { name: 'ریسک قابل قبول است؟', description: 'آیا حد ضرر و حجم با پلن شما هماهنگ است؟', type: 'checkbox' as const, required: true },
+          { name: 'یادداشت تصمیم نهایی', description: 'وارد شو، صبر کن یا وارد نشو.', type: 'textarea' as const, required: false },
+        ],
+      },
+    ];
+
+      const phases: Phase[] = phaseDefinitions.map((phase, phaseIndex) => ({
+        id: crypto.randomUUID(),
+        strategyId: strategy.id,
+        name: phase.name,
+        description: phase.description,
+        order: phaseIndex,
+      }));
+      await db.phases.bulkAdd(phases);
+
+      const steps: Step[] = phases.flatMap((phase, phaseIndex) =>
+        phaseDefinitions[phaseIndex].steps.map((step, stepIndex) => ({
+          id: crypto.randomUUID(),
+          phaseId: phase.id,
+          name: step.name,
+          description: step.description,
+          type: step.type,
+          required: step.required,
+          order: stepIndex,
+          options: 'options' in step ? (step.options ?? '[]') : '[]',
+          hint: null,
+        })),
+      );
+      await db.steps.bulkAdd(steps);
+    }
+    try {
+      localStorage.setItem('tradermind-analysis-template-v1', 'done');
+    } catch {
+      // در اجرای بعدی دوباره بررسی می‌شود.
+    }
+  }
+
+  const tradeCount = await db.trades.count();
+  if (tradeCount > 0) return; // معاملات نمونه ایجاد نمی‌شوند
   // معاملات نمونه اضافه نمی‌شوند — کاربر از نو شروع می‌کند
 }
 

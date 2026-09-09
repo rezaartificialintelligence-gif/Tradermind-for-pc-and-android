@@ -7,7 +7,7 @@
  */
 
 import { Trade } from '../../db/database';
-import { isClosed, isWin, isLoss } from '../../lib/tradeHelpers';
+import { computeProfitFactor as computeCanonicalProfitFactor } from './canonical';
 
 export interface ProfitFactorResult {
   profitFactor: number | null;
@@ -20,16 +20,13 @@ export interface ProfitFactorResult {
 }
 
 export function computeProfitFactor(trades: Trade[]): ProfitFactorResult {
-  const closed = trades.filter(isClosed);
-  const wins = closed.filter(isWin);
-  const losses = closed.filter(isLoss);
-
-  const totalWinPnl = wins.reduce((s, t) => s + Math.max(0, t.profitLoss ?? 0), 0);
-  const totalLossPnl = Math.abs(losses.reduce((s, t) => s + Math.min(0, t.profitLoss ?? 0), 0));
-  const profitFactor = totalLossPnl > 0 ? totalWinPnl / totalLossPnl : null;
-
-  const totalWinR = wins.reduce((s, t) => s + Math.max(0, t.rMultiple ?? 0), 0);
-  const totalLossR = Math.abs(losses.reduce((s, t) => s + Math.min(0, t.rMultiple ?? 0), 0));
+  const canonical = computeCanonicalProfitFactor(trades);
+  const closed = trades.filter(t => t.status === 'closed');
+  const totalWinR = closed.reduce((s, t) => s + Math.max(0, t.rMultiple ?? 0), 0);
+  const totalLossR = Math.abs(closed.reduce((s, t) => s + Math.min(0, t.rMultiple ?? 0), 0));
+  const profitFactor = canonical.profitFactor;
+  const totalWinPnl = canonical.totalWinPnl;
+  const totalLossPnl = canonical.totalLossPnl;
   const profitFactorR = totalLossR > 0 ? totalWinR / totalLossR : null;
 
   const grade = (() => {

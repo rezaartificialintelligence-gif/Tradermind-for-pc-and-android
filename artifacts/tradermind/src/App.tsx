@@ -34,6 +34,7 @@ import { useSecurityStore } from './security/useSecurityStore';
 import { NavigationGuardProvider } from './navigation/NavigationGuard';
 import { reminderService } from './services/reminderService';
 import { normalizeExistingTrades } from './services/tradeNormalizationService';
+import { migrateChartScreenshotsToBlobs } from './db/database';
 import { clearChunkRecoveryMarker, isChunkLoadError, recoverFromChunkLoadError } from './lib/runtimeRecovery';
 import ScreenshotErrorBoundary from './components/errorBoundaries/ScreenshotErrorBoundary';
 
@@ -284,21 +285,43 @@ function AppContent() {
   const { isEnabled, isLocked } = useSecurityStore();
 
   useEffect(() => {
-    void seedInitialData().then(async () => {
-      const normalized = await normalizeExistingTrades();
-      if (normalized.updated > 0) {
-        toast.success(
-          `${normalized.updated} معامله اصلاح شد؛ ${normalized.closed} معامله بسته و ${normalized.sessionsDetected} سشن تشخیص داده شد.`,
-        );
-      }
-    }).catch((error) => {
+    void seedInitialData().catch((error) => {
       // Seed داده کمکی توسعه است و نباید شکست آن رابط اصلی برنامه را
       // از کار بیندازد.
       console.error('[TraderMind startup]', error);
     });
+
+    // مهاجرت‌های حجیم نباید routeهای اصلی را پشت IndexedDB قفل کنند.
+    // بعد از اولین render و با marker idempotent در پس‌زمینه اجرا می‌شوند.
+    const migrationTimer = window.setTimeout(() => {
+      void migrateChartScreenshotsToBlobs(20).catch(error => {
+        console.error('[TraderMind screenshot migration]', error);
+      });
+      try {
+        if (localStorage.getItem('tradermind-trade-normalization-v1') === 'done') return;
+      } catch {
+        // ادامه می‌دهیم؛ failure مانع render صفحات نیست.
+      }
+      void normalizeExistingTrades().then(normalized => {
+        try {
+          localStorage.setItem('tradermind-trade-normalization-v1', 'done');
+        } catch {
+          // در اجرای بعدی دوباره بررسی می‌شود.
+        }
+        if (normalized.updated > 0) {
+          toast.success(
+            `${normalized.updated} معامله اصلاح شد؛ ${normalized.closed} معامله بسته و ${normalized.sessionsDetected} سشن تشخیص داده شد.`,
+          );
+        }
+      }).catch(error => {
+        console.error('[TraderMind trade normalization]', error);
+      });
+    }, 4000);
+
     void reminderService.initialize().catch(error => {
       console.error('[TraderMind reminders]', error);
     });
+    return () => window.clearTimeout(migrationTimer);
   }, []);
 
   return (

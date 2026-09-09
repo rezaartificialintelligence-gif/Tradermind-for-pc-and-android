@@ -58,19 +58,19 @@ function NavItem({
     <Link
       href={href}
       className={cn(
-        "group flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all text-sm font-medium min-h-[46px]",
+        "flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-sm font-medium min-h-[44px]",
         isActive
-          ? "bg-sidebar-primary text-sidebar-primary-foreground font-semibold shadow-lg shadow-sidebar-primary/20"
-          : "text-sidebar-foreground/65 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          ? "bg-primary/10 text-primary"
+          : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
       )}
       onClick={onClick}
     >
       <Icon className="h-5 w-5 shrink-0" />
 
-      <span className="truncate">{label}</span>
+      <span>{label}</span>
 
       {isActive && (
-        <ChevronLeft className="h-4 w-4 ms-auto opacity-60 group-hover:translate-x-[-2px] transition-transform" />
+        <ChevronLeft className="h-4 w-4 ms-auto opacity-60" />
       )}
     </Link>
   );
@@ -384,7 +384,7 @@ export function Sidebar() {
             left-0
             right-0
             bottom-0
-            top-14
+             top-16
             bg-background/80
             backdrop-blur-sm
             z-40
@@ -400,19 +400,19 @@ export function Sidebar() {
       {/* ── Sidebar دسکتاپ + Drawer موبایل */}
       <aside
         className={cn(
-          "tradermind-mobile-drawer fixed z-50 bg-sidebar border-l border-sidebar-border flex flex-col shadow-2xl"
+            "tradermind-mobile-drawer fixed z-50 bg-sidebar/95 border-l flex flex-col"
         )}
         style={{
           // Keep the drawer inside the visual viewport on Android WebView.
           // Explicit physical sides avoid RTL + transform rounding bugs.
           right: 0,
           left: "auto",
-          // Layout reserves md:pr-72 (18rem) on desktop; keep both values
+          // Layout reserves md:pr-64 (16rem) on desktop; keep both values
           // identical so the module menu never covers the content column.
-          width: "min(18rem, 100vw)",
+          width: "min(16rem, 100vw)",
           maxWidth: "100vw",
-          top: "56px",
-          height: "calc(100dvh - 56px)",
+           top: "64px",
+           height: "calc(100dvh - 64px)",
         }}
         data-open={sidebarOpen ? "true" : "false"}
         dir="rtl"
@@ -425,41 +425,42 @@ export function Sidebar() {
             flex
             items-center
             justify-between
-            px-5
-            border-b border-sidebar-border
+            px-4
+            border-b
             shrink-0
           "
           style={{
-            minHeight: "68px",
+            minHeight: "64px",
           }}
         >
 
           <div className="
             flex
             items-center
-            gap-3
+            gap-2
             font-semibold
-            text-[1.05rem]
+            text-lg
             tracking-tight
           ">
             <div className="
-              w-8
-              h-8
-              rounded-lg
-              bg-sidebar-primary
+              w-6
+              h-6
+             rounded-xl
+              bg-primary
               flex
               items-center
               justify-center
             ">
               <ActivitySquare
-                  className="w-4 h-4 text-sidebar-primary-foreground"
+                className="
+                  w-4
+                  h-4
+                  text-primary-foreground
+                "
               />
             </div>
 
-            <div>
-              <div>{appName}</div>
-              <div className="mt-0.5 text-[10px] font-medium tracking-[.14em] text-sidebar-foreground/40">TRADING JOURNAL</div>
-            </div>
+            {appName}
           </div>
 
 
@@ -487,7 +488,7 @@ export function Sidebar() {
         <div className="
           flex-1
           overflow-y-auto
-          py-4
+           py-5
         ">
 
           {navGroups.map((group, i) => (
@@ -495,18 +496,18 @@ export function Sidebar() {
             <div
               key={i}
               className="
-                mb-7
-                px-4
+                 mb-7
+                px-3
               "
             >
 
               <h4
                 className="
-                  mb-1.5
+                   mb-2
                   px-3
                   text-xs
                   font-semibold
-                  text-sidebar-foreground/40
+                  text-muted-foreground
                   uppercase
                   tracking-wider
                 "
@@ -516,7 +517,7 @@ export function Sidebar() {
 
 
 
-              <div className="space-y-1">
+              <div className="space-y-0.5">
 
                 {group.items.map((item, j) => (
 
@@ -549,14 +550,14 @@ export function Sidebar() {
         {/* نسخه برنامه */}
         <div
           className="
-            p-5
-            border-t border-sidebar-border
+            p-4
+            border-t
             shrink-0
           "
         >
           <p className="
             text-xs
-            text-sidebar-foreground/45
+            text-muted-foreground
             text-center
           ">
             TraderMind • {DISPLAY_VERSION}
@@ -588,7 +589,7 @@ export function Sidebar() {
           gap-3
         "
         style={{
-          height: "56px",
+           height: "64px",
           paddingTop:
             "env(safe-area-inset-top)",
         }}
@@ -643,8 +644,8 @@ export function Sidebar() {
           items-stretch
         "
         style={{
-          height:
-            "calc(56px + env(safe-area-inset-bottom, 0px))",
+           height:
+             "calc(64px + env(safe-area-inset-bottom, 0px))",
 
           paddingBottom:
             "env(safe-area-inset-bottom, 0px)",

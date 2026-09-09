@@ -19,6 +19,8 @@ export interface TradeFilters {
   status?: 'open' | 'closed' | 'cancelled';
   symbol?: string;
   strategyId?: string;
+  accountId?: string;
+  boxId?: string;
   fromDate?: number;   // timestamp ms
   toDate?: number;     // timestamp ms
 }
@@ -28,22 +30,22 @@ const DEFAULT_PAGE_SIZE = 50;
 // ── Query بهینه بر اساس فیلترها ──────────────────────────────────────────────
 
 /**
- * دریافت معاملات با query بهینه — بدون full-table scan.
- * اولویت: openedAt index اگر dateRange داریم، در غیر این صورت status index.
+ * دریافت معاملات با query بهینه — بدون full-table scan غیرضروری.
+ *
+ * استراتژی: یک ایندکس Dexie برای محدود کردن اولیهٔ نتایج انتخاب می‌شود (بر اساس
+ * محدودکننده‌ترین فیلتر موجود)، سپس تمام فیلترهای دیگر — بدون استثنا — در حافظه
+ * روی همان subset اعمال می‌شوند. برخلاف نسخهٔ قبلی، دیگر هیچ ترکیبی از فیلترها
+ * (مثلاً بازهٔ تاریخ + استراتژی، یا بازهٔ تاریخ + نماد) نادیده گرفته نمی‌شود.
  */
 export async function getTrades(filters?: TradeFilters): Promise<Trade[]> {
   if (!filters || Object.keys(filters).length === 0) {
-    // هنوز toArray لازم است — اما بهتر است از getPaginatedTrades استفاده شود
     return db.trades.toArray();
   }
 
-  let collection = (() => {
+  // انتخاب یک ایندکس اولیه برای کوچک کردن subset — ترتیب بر اساس محدودکنندگی تخمینی.
+  const collection = (() => {
     if (filters.fromDate !== undefined && filters.toDate !== undefined) {
-      // از index openedAt استفاده می‌کنیم
       return db.trades.where('openedAt').between(filters.fromDate, filters.toDate, true, true);
-    }
-    if (filters.status) {
-      return db.trades.where('status').equals(filters.status);
     }
     if (filters.symbol) {
       return db.trades.where('symbol').equals(filters.symbol);
@@ -51,23 +53,44 @@ export async function getTrades(filters?: TradeFilters): Promise<Trade[]> {
     if (filters.strategyId) {
       return db.trades.where('strategyId').equals(filters.strategyId);
     }
+    if (filters.accountId) {
+      return db.trades.where('accountId').equals(filters.accountId);
+    }
+    if (filters.boxId) {
+      return db.trades.where('boxId').equals(filters.boxId);
+    }
+    if (filters.status) {
+      return db.trades.where('status').equals(filters.status);
+    }
     return db.trades.toCollection();
   })();
 
   let results = await collection.toArray();
 
-  // فیلترهای اضافی در حافظه (روی subset کوچک‌تر)
-  if (filters.status && !filters.fromDate) {
-    results = results.filter(t => t.status === filters.status);
+  // تمام فیلترهای باقی‌مانده — بدون قید و شرط — روی subset اعمال می‌شوند.
+  // (ایندکسی که برای query اولیه استفاده شد اینجا دوباره چک می‌شود؛ این تکرار
+  // بی‌خطر است چون همان نتیجه را می‌دهد، ولی تضمین می‌کند هیچ ترکیبی از فیلترها
+  // نادیده گرفته نشود.)
+  if (filters.status) {
+    results = results.filter((t: Trade) => t.status === filters.status);
   }
-  if (filters.symbol && !filters.fromDate) {
-    results = results.filter(t => t.symbol === filters.symbol);
+  if (filters.symbol) {
+    results = results.filter((t: Trade) => t.symbol === filters.symbol);
   }
-  if (filters.strategyId && !filters.fromDate) {
-    results = results.filter(t => t.strategyId === filters.strategyId);
+  if (filters.strategyId) {
+    results = results.filter((t: Trade) => t.strategyId === filters.strategyId);
   }
-  if (filters.fromDate !== undefined && filters.toDate !== undefined && filters.status) {
-    results = results.filter(t => t.status === filters.status);
+  if (filters.accountId) {
+    results = results.filter((t: Trade) => t.accountId === filters.accountId);
+  }
+  if (filters.boxId) {
+    results = results.filter((t: Trade) => t.boxId === filters.boxId);
+  }
+  if (filters.fromDate !== undefined) {
+    results = results.filter((t: Trade) => t.openedAt >= filters.fromDate!);
+  }
+  if (filters.toDate !== undefined) {
+    results = results.filter((t: Trade) => t.openedAt <= filters.toDate!);
   }
 
   return results;
@@ -106,6 +129,12 @@ export async function countTrades(status?: string): Promise<number> {
 /**
  * Paginated trades با cursor (بهترین گزینه برای Dexie).
  * از offset-based استفاده می‌کند اما با .offset().limit() که Dexie بهینه می‌کند.
+ *
+ * نکته: برخلاف نسخهٔ قبلی که فقط یکی از فیلترها را در query اصلی اعمال می‌کرد و
+ * بقیه را نادیده می‌گرفت (و همین باعث offset/pagination نادرست هم می‌شد)، اینجا
+ * یک ایندکس اولیه برای query انتخاب می‌شود و تمام فیلترهای دیگر با Collection.filter
+ * (پیش از offset/limit) روی همان کوئری اعمال می‌شوند — تا هم فیلتر کامل درست باشد و
+ * هم شمارش/صفحه‌بندی با هم هماهنگ بمانند.
  */
 export async function getPaginatedTrades(
   page = 1,
@@ -114,33 +143,40 @@ export async function getPaginatedTrades(
 ): Promise<PaginatedResult<Trade>> {
   const offset = (page - 1) * pageSize;
 
-  // شمارش کل (بدون بارگذاری همه داده)
-  let totalCollection = (() => {
-    if (filters?.status) return db.trades.where('status').equals(filters.status);
-    if (filters?.symbol) return db.trades.where('symbol').equals(filters.symbol);
-    if (filters?.fromDate !== undefined && filters?.toDate !== undefined) {
-      return db.trades.where('openedAt').between(filters.fromDate, filters.toDate, true, true);
-    }
-    return db.trades.toCollection();
-  })();
+  const buildCollection = () => {
+    let collection = (() => {
+      if (filters?.fromDate !== undefined && filters?.toDate !== undefined) {
+        return db.trades.where('openedAt').between(filters.fromDate, filters.toDate, true, true);
+      }
+      if (filters?.status) return db.trades.where('status').equals(filters.status);
+      if (filters?.symbol) return db.trades.where('symbol').equals(filters.symbol);
+      if (filters?.strategyId) return db.trades.where('strategyId').equals(filters.strategyId);
+      if (filters?.accountId) return db.trades.where('accountId').equals(filters.accountId);
+      if (filters?.boxId) return db.trades.where('boxId').equals(filters.boxId);
+      return db.trades.toCollection();
+    })();
 
-  const total = await totalCollection.count();
+    // هر فیلتری که در انتخاب ایندکس اصلی استفاده نشد، اینجا به‌صورت ترکیبی اعمال می‌شود.
+    if (filters?.status) collection = collection.and((t: Trade) => t.status === filters.status);
+    if (filters?.symbol) collection = collection.and((t: Trade) => t.symbol === filters.symbol);
+    if (filters?.strategyId) collection = collection.and((t: Trade) => t.strategyId === filters.strategyId);
+    if (filters?.accountId) collection = collection.and((t: Trade) => t.accountId === filters.accountId);
+    if (filters?.boxId) collection = collection.and((t: Trade) => t.boxId === filters.boxId);
+    if (filters?.fromDate !== undefined) collection = collection.and((t: Trade) => t.openedAt >= filters.fromDate!);
+    if (filters?.toDate !== undefined) collection = collection.and((t: Trade) => t.openedAt <= filters.toDate!);
 
-  // دریافت صفحه با orderBy + offset + limit
-  let itemCollection = (() => {
-    if (filters?.status) return db.trades.where('status').equals(filters.status);
-    if (filters?.symbol) return db.trades.where('symbol').equals(filters.symbol);
-    if (filters?.fromDate !== undefined && filters?.toDate !== undefined) {
-      return db.trades.where('openedAt').between(filters.fromDate, filters.toDate, true, true);
-    }
-    return db.trades.orderBy('openedAt');
-  })();
+    return collection;
+  };
 
-  const items = await itemCollection
-    .reverse()       // جدیدترین ابتدا
-    .offset(offset)
-    .limit(pageSize)
-    .toArray();
+  // شمارش کل (روی همان مجموعهٔ فیلترشده)
+  const total = await buildCollection().count();
+
+  // دریافت صفحه با orderBy + offset + limit — باید از ابتدا مرتب و سپس فیلتر شود
+  // تا offset/limit روی نتیجهٔ نهایی درست عمل کند؛ Dexie این کار را با sortBy انجام
+  // نمی‌دهد، پس مرتب‌سازی را به‌صورت دستی پس از فیلتر کامل انجام می‌دهیم.
+  const filtered = await buildCollection().toArray();
+  filtered.sort((a: Trade, b: Trade) => b.openedAt - a.openedAt); // جدیدترین ابتدا
+  const items = filtered.slice(offset, offset + pageSize);
 
   return {
     items,

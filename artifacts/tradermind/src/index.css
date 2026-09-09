@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&family=Vazirmatn:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @plugin "@tailwindcss/typography";
@@ -68,83 +68,83 @@
 }
 
 :root {
-  /* TraderMind 1.4 — quiet market terminal: ink, sand, teal and coral */
-  --background: 42 35% 94%;
-  --foreground: 204 29% 17%;
-  --border: 38 20% 82%;
-  --card: 40 33% 97%;
-  --card-foreground: 204 29% 17%;
-  --card-border: 38 20% 82%;
-  --sidebar: 205 31% 16%;
-  --sidebar-foreground: 41 33% 91%;
-  --sidebar-border: 205 24% 25%;
-  --sidebar-primary: 166 57% 44%;
-  --sidebar-primary-foreground: 204 32% 12%;
-  --sidebar-accent: 205 25% 23%;
-  --sidebar-accent-foreground: 41 33% 94%;
-  --sidebar-ring: 166 57% 44%;
-  --popover: 40 33% 97%;
-  --popover-foreground: 204 29% 17%;
-  --popover-border: 38 20% 82%;
-  --primary: 166 57% 38%;
-  --primary-foreground: 40 33% 97%;
-  --secondary: 36 28% 88%;
-  --secondary-foreground: 204 29% 17%;
-  --muted: 38 25% 89%;
-  --muted-foreground: 204 14% 45%;
-  --accent: 17 71% 58%;
-  --accent-foreground: 40 33% 97%;
-  --destructive: 7 69% 51%;
-  --destructive-foreground: 40 33% 97%;
-  --input: 38 20% 82%;
-  --ring: 166 57% 38%;
-  --chart-1: 166 57% 38%;
-  --chart-2: 17 71% 58%;
-  --chart-3: 42 78% 49%;
-  --chart-4: 204 29% 35%;
-  --chart-5: 271 30% 52%;
+  --background: 225 28% 96%;
+  --foreground: 222 40% 11%;
+  --border: 222 22% 87%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 40% 11%;
+  --card-border: 222 22% 87%;
+  --sidebar: 224 30% 98%;
+  --sidebar-foreground: 222 40% 11%;
+  --sidebar-border: 222 22% 87%;
+  --sidebar-primary: 224 76% 58%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 224 40% 93%;
+  --sidebar-accent-foreground: 222 40% 11%;
+  --sidebar-ring: 224 76% 58%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 40% 11%;
+  --popover-border: 222 22% 87%;
+  --primary: 224 76% 58%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 224 32% 92%;
+  --secondary-foreground: 222 40% 18%;
+  --muted: 224 24% 92%;
+  --muted-foreground: 222 16% 46%;
+  --accent: 224 32% 92%;
+  --accent-foreground: 222 40% 18%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 222 22% 84%;
+  --ring: 224 76% 58%;
+  --chart-1: 224 76% 58%;
+  --chart-2: 158 64% 42%;
+  --chart-3: 0 84% 60%;
+  --chart-4: 222 16% 47%;
+  --chart-5: 38 92% 52%;
 
-  --app-font-sans: 'Vazirmatn', sans-serif;
+  --app-font-sans: 'Vazirmatn', 'Inter', sans-serif;
   --app-font-serif: Georgia, serif;
-  --app-font-mono: 'DM Mono', monospace;
-  --radius: 0.9rem;
+  --app-font-mono: Menlo, monospace;
+  --radius: 0.75rem; 
 }
 
 .dark {
-  --background: 204 29% 10%;
-  --foreground: 41 30% 90%;
-  --border: 204 20% 24%;
-  --card: 204 25% 14%;
-  --card-foreground: 41 30% 90%;
-  --card-border: 204 20% 24%;
-  --sidebar: 204 31% 8%;
-  --sidebar-foreground: 41 30% 90%;
-  --sidebar-border: 204 20% 19%;
-  --sidebar-primary: 166 57% 48%;
-  --sidebar-primary-foreground: 204 32% 10%;
-  --sidebar-accent: 204 23% 16%;
-  --sidebar-accent-foreground: 41 30% 90%;
-  --sidebar-ring: 166 57% 48%;
-  --popover: 204 25% 14%;
-  --popover-foreground: 41 30% 90%;
-  --popover-border: 204 20% 24%;
-  --primary: 166 57% 48%;
-  --primary-foreground: 204 32% 10%;
-  --secondary: 204 23% 19%;
-  --secondary-foreground: 41 30% 90%;
-  --muted: 204 23% 18%;
-  --muted-foreground: 204 14% 70%;
-  --accent: 17 71% 58%;
-  --accent-foreground: 204 32% 10%;
-  --destructive: 7 69% 58%;
-  --destructive-foreground: 204 32% 10%;
-  --input: 204 20% 25%;
-  --ring: 166 57% 48%;
-  --chart-1: 166 57% 48%;
-  --chart-2: 17 71% 58%;
-  --chart-3: 42 78% 55%;
-  --chart-4: 204 29% 60%;
-  --chart-5: 271 30% 66%;
+  --background: 225 34% 7%;
+  --foreground: 220 24% 92%;
+  --border: 222 28% 17%;
+  --card: 224 30% 11%;
+  --card-foreground: 220 24% 92%;
+  --card-border: 222 28% 17%;
+  --sidebar: 226 38% 6%;
+  --sidebar-foreground: 220 24% 92%;
+  --sidebar-border: 222 28% 16%;
+  --sidebar-primary: 224 88% 68%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 224 30% 13%;
+  --sidebar-accent-foreground: 220 24% 92%;
+  --sidebar-ring: 224 88% 68%;
+  --popover: 224 30% 11%;
+  --popover-foreground: 220 24% 92%;
+  --popover-border: 222 28% 17%;
+  --primary: 224 88% 68%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 224 28% 15%;
+  --secondary-foreground: 220 24% 92%;
+  --muted: 224 28% 15%;
+  /* Keep secondary text readable on dark cards and sidebars. */
+  --muted-foreground: 220 18% 70%;
+  --accent: 224 28% 15%;
+  --accent-foreground: 220 24% 92%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 222 28% 21%;
+  --ring: 224 88% 68%;
+  --chart-1: 224 88% 68%;
+  --chart-2: 158 64% 48%;
+  --chart-3: 0 84% 60%;
+  --chart-4: 220 18% 65%;
+  --chart-5: 38 92% 55%;
 }
 
 /* ──── اندازه متن ──── */
@@ -174,6 +174,22 @@
     /* جلوگیری از over-scroll در iOS */
     overscroll-behavior: none;
     overflow-x: hidden;
+    background-image:
+      radial-gradient(circle at 10% 0%, hsl(var(--primary) / 0.08), transparent 28rem),
+      radial-gradient(circle at 88% 18%, hsl(190 82% 54% / 0.05), transparent 24rem);
+    background-attachment: fixed;
+  }
+
+  #root { min-height: 100dvh; }
+
+  button, a, input, textarea, select {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 180ms;
+    transition-timing-function: ease-out;
+  }
+
+  input:focus-visible, textarea:focus-visible, select:focus-visible {
+    box-shadow: 0 0 0 3px hsl(var(--ring) / 0.16);
   }
 
   /* Android WebView can briefly retain a translated fixed drawer's overflow. */
@@ -214,6 +230,35 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 9999px; }
     ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.5); }
+  }
+}
+
+/* ── زبان بصری مشترک برنامه ── */
+.tradermind-mobile-drawer {
+  box-shadow: -18px 0 45px hsl(225 40% 4% / 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.tradermind-mobile-drawer a {
+  position: relative;
+}
+
+.tradermind-mobile-drawer a:hover {
+  transform: translateX(-2px);
+}
+
+.tradermind-mobile-drawer a.bg-primary\/10 {
+  box-shadow: inset -3px 0 0 hsl(var(--primary)), 0 8px 20px hsl(var(--primary) / 0.08);
+  background: linear-gradient(90deg, hsl(var(--primary) / 0.14), hsl(var(--primary) / 0.04));
+}
+
+.page-enter {
+  animation: pageEnter 0.28s cubic-bezier(.22, 1, .36, 1);
+}
+
+@media (min-width: 768px) {
+  main > .w-full {
+    position: relative;
   }
 }
 
@@ -342,96 +387,6 @@ input:-webkit-autofill:focus {
 @media (max-width: 767px) {
   h1 { font-size: 1.5rem !important; }
   h2 { font-size: 1.25rem !important; }
-}
-
-/* ─────────────────────────────────────────────────────────
-   Product surface layer
-   These selectors intentionally sit below the existing page logic:
-   they give every legacy screen the same 1.4 visual language.
-   ───────────────────────────────────────────────────────── */
-@layer base {
-  :root { color-scheme: light; }
-  .dark { color-scheme: dark; }
-  body {
-    background:
-      radial-gradient(circle at 8% 0%, hsl(var(--accent) / .055), transparent 28rem),
-      hsl(var(--background));
-    font-feature-settings: "ss01" 1, "cv02" 1;
-  }
-  h1, h2, h3, h4, h5, h6 { letter-spacing: -0.025em; }
-  ::selection { background: hsl(var(--primary) / .22); color: hsl(var(--foreground)); }
-  input, textarea, select {
-    border-radius: .7rem;
-    border-color: hsl(var(--input));
-    background-color: hsl(var(--card) / .82);
-    transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
-  }
-  input:hover, textarea:hover, select:hover { border-color: hsl(var(--primary) / .48); }
-  input:focus, textarea:focus, select:focus {
-    border-color: hsl(var(--primary));
-    box-shadow: 0 0 0 3px hsl(var(--primary) / .13);
-    outline: none;
-  }
-}
-
-@layer utilities {
-  .page-enter { animation: pageEnter .32s cubic-bezier(.22, .8, .24, 1); }
-  .text-balance { text-wrap: balance; }
-  .surface-grid {
-    background-image: linear-gradient(hsl(var(--foreground) / .035) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--foreground) / .035) 1px, transparent 1px);
-    background-size: 26px 26px;
-  }
-}
-
-/* Shared cards: higher rhythm, softer edges, no template-like heavy shadow. */
-.rounded-xl.border.bg-card,
-.rounded-xl.border.bg-card\/50,
-[class*="bg-card"].border {
-  border-color: hsl(var(--card-border) / .82);
-  box-shadow: 0 1px 1px hsl(var(--foreground) / .025), 0 9px 26px hsl(var(--foreground) / .045);
-  transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease;
-}
-.rounded-xl.border.bg-card:hover,
-[class*="bg-card"].border:hover {
-  border-color: hsl(var(--primary) / .34);
-  box-shadow: 0 10px 28px hsl(var(--foreground) / .075);
-}
-.dark .rounded-xl.border.bg-card,
-.dark [class*="bg-card"].border { box-shadow: 0 10px 28px hsl(204 40% 4% / .22); }
-
-/* Product-level rhythm: these classes are shared by the dashboard shell and
-   keep the redesigned surfaces distinct from the older utility-only cards. */
-.dashboard-panel {
-  border-color: hsl(var(--card-border) / .72);
-  box-shadow: 0 12px 34px hsl(var(--foreground) / .055);
-}
-.dashboard-panel:hover {
-  border-color: hsl(var(--primary) / .26);
-  box-shadow: 0 16px 40px hsl(var(--foreground) / .085);
-}
-.page-content > * { animation: pageEnter .32s cubic-bezier(.22, .8, .24, 1); }
-.dashboard-hero button { position: relative; z-index: 1; }
-
-/* Button hierarchy */
-button, a { -webkit-tap-highlight-color: transparent; }
-button:not([data-radix-collection-item]) { font-weight: 600; }
-button[class*="bg-primary"] {
-  box-shadow: 0 5px 13px hsl(var(--primary) / .18);
-}
-button[class*="bg-primary"]:hover { filter: brightness(.96); }
-
-/* Tables get air and a clear scanning line. */
-table thead tr { background: hsl(var(--muted) / .48); }
-table th { height: 2.9rem !important; font-size: .7rem; letter-spacing: .02em; }
-table td { height: 3.65rem; padding-top: .8rem !important; padding-bottom: .8rem !important; }
-table tbody tr { border-color: hsl(var(--border) / .72); }
-table tbody tr:hover { background: hsl(var(--primary) / .055) !important; }
-
-@media (max-width: 767px) {
-  .rounded-xl.border.bg-card,
-  [class*="bg-card"].border { box-shadow: 0 5px 18px hsl(var(--foreground) / .05); }
-  table td { height: 3.9rem; }
 }
 
 /* ── جلوگیری از zoom روی input در iOS ── */

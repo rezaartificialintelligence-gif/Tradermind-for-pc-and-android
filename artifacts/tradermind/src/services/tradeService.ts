@@ -3,7 +3,9 @@ import { isWin, isClosed } from '../lib/tradeHelpers';
 import { strategyService } from './strategyService';
 import { analysisService } from './analysisService';
 import { tradeVersionService, tradeEventService } from './tradeEventService';
-import { detectTradingSession } from '../lib/tradeClassification';
+import { detectTradingSession, getTradeNetPnl } from '../lib/tradeClassification';
+import { getTrades as getRepositoryTrades } from '../core/repositories/tradeRepository';
+import { getTradingDateRange } from '../lib/tradingTime';
 
 const defaultReview = JSON.stringify({ didWell: '', didWrong: '', learned: '', wouldTakeAgain: null, validSetup: null });
 const defaultPostTradeReviewStr = JSON.stringify(defaultPostTradeReview);
@@ -11,6 +13,14 @@ const defaultPostTradeReviewStr = JSON.stringify(defaultPostTradeReview);
 export const tradeService = {
   async getAllTrades() {
     return db.trades.orderBy('openedAt').reverse().toArray();
+  },
+
+  async getTradesByDateRange(from: number, to: number) {
+    return db.trades
+      .where('openedAt')
+      .between(from, to, true, true)
+      .reverse()
+      .toArray();
   },
 
   async getTradeById(id: string) {
@@ -50,7 +60,8 @@ export const tradeService = {
       sessionId: null, strategyId: null, symbol: '', market: null,
       direction: 'long', entryPrice: 0, exitPrice: null, stopLoss: 0,
       takeProfit: null, positionSize: null, riskPercentage: null, riskAmount: null,
-      rMultiple: null, result: 'open', profitLoss: null, fees: null, status: 'open',
+       rMultiple: null, result: 'open', profitLoss: null, fees: null, commission: null, spread: null,
+       ticketNumber: null, status: 'open',
       openedAt: now, closedAt: null, reasonForExit: null,
       emotions: '[]', emotionNotes: null, notes: null,
       screenshots: '[]', adherenceScore: null, adherenceRating: null,
@@ -58,7 +69,7 @@ export const tradeService = {
       tags: '[]', liveMonitoring: null, createdAt: now,
       plannedEntry: null, plannedSL: null, plannedTP: null, plannedRR: null,
       plannedRisk: null, plannedPositionSize: null,
-      setupType: null, timezone: null,
+       setupType: null, tradeTrigger: null, timezone: null,
       entryReason: null, lesson: null,
       slMoved: null, tpMoved: null, partialClose: null, addedToPosition: null,
       reducedPosition: null, manualExit: null, managementReason: null,
@@ -106,8 +117,7 @@ export const tradeService = {
   async updateTrade(id: string, data: Partial<Trade>) {
     const existing = await db.trades.get(id);
     if (!existing) {
-      await db.trades.update(id, data);
-      return db.trades.get(id);
+      throw new Error(`معامله با شناسهٔ ${id} پیدا نشد و به‌روزرسانی انجام نشد.`);
     }
 
     await db.transaction('rw', [db.trades, db.tradeVersions, db.tradeEvents], async () => {
@@ -208,7 +218,7 @@ export const tradeService = {
     return {
       total: trades.length,
       winRate: closed.length > 0 ? (wins.length / closed.length) * 100 : 0,
-      totalPnl: trades.reduce((acc, t) => acc + (t.profitLoss || 0) - (t.fees || 0), 0),
+      totalPnl: trades.reduce((acc, t) => acc + (getTradeNetPnl(t) ?? 0), 0),
       avgRMultiple: withR.length > 0 ? withR.reduce((acc, t) => acc + (t.rMultiple || 0), 0) / withR.length : 0,
       closedCount: closed.length,
       openCount: trades.filter(t => t.status === 'open').length,
@@ -220,7 +230,18 @@ export const tradeService = {
     emotion?: string; adherenceRating?: string; dateFrom?: number; dateTo?: number;
     accountId?: string; boxId?: string;
   } = {}) {
-    let trades = await db.trades.orderBy('openedAt').reverse().toArray();
+    const indexedFilters = {
+      status: filters.result && filters.result !== 'all'
+        ? (filters.result === 'open' ? 'open' : filters.result === 'cancelled' ? 'cancelled' : 'closed') as Trade['status'] | undefined
+        : undefined,
+      strategyId: filters.strategyId && filters.strategyId !== 'all' ? filters.strategyId : undefined,
+      accountId: filters.accountId && filters.accountId !== 'all' && filters.accountId !== 'none_set' ? filters.accountId : undefined,
+      boxId: filters.boxId && filters.boxId !== 'all' && filters.boxId !== 'none_set' ? filters.boxId : undefined,
+      fromDate: filters.dateFrom,
+      toDate: filters.dateTo,
+    };
+    let trades = await getRepositoryTrades(indexedFilters);
+    trades.sort((a, b) => b.openedAt - a.openedAt);
     if (filters.search) { const s = filters.search.toLowerCase(); trades = trades.filter(t => t.symbol.toLowerCase().includes(s)); }
     if (filters.result && filters.result !== 'all') trades = trades.filter(t => t.result === filters.result);
     if (filters.direction && filters.direction !== 'all') trades = trades.filter(t => t.direction === filters.direction);
@@ -243,8 +264,7 @@ export const tradeService = {
   },
 
   async getTradesByDate(dateStr: string): Promise<Trade[]> {
-    const start = new Date(dateStr + 'T00:00:00').getTime();
-    const end = new Date(dateStr + 'T23:59:59').getTime();
+    const { from: start, to: end } = getTradingDateRange(dateStr);
     return db.trades
       .where('openedAt')
       .between(start, end, true, true)

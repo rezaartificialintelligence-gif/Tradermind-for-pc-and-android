@@ -47,4 +47,8 @@ export const tradingBoxService = {
       throw error;
     }
   },
+
+  async getByAccountId(accountId: string): Promise<TradingBox[]> {
+    return db.tradingBoxes.where('accountId').equals(accountId).toArray();
+  },
 };

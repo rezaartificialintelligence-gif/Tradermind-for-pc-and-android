@@ -10,18 +10,19 @@ import { toast } from 'sonner';
 import { db } from '../db/database';
 import { calculatePreTradeRisk, getPreTradeBriefing } from '../services/riskService';
 import type { RiskProfileData } from '../services/riskService';
+import { getInstrumentSpec, DEFAULT_INSTRUMENT_SPEC } from '../lib/instrumentSpecs';
 
 // ─────────────────────────────────────────────────────────────────
 // Helper
 // ─────────────────────────────────────────────────────────────────
-function NumInput({ label, value, onChange, placeholder = '0', hint }: {
-  label: string; value: string; onChange: (v: string) => void; placeholder?: string; hint?: string;
+function NumInput({ label, value, onChange, placeholder = '0', hint, type = 'number' }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string; hint?: string; type?: 'number' | 'text';
 }) {
   return (
     <div className="space-y-1.5">
       <label className="text-sm font-medium text-foreground/90">{label}</label>
       <input
-        type="number" inputMode="decimal" value={value} onChange={e => onChange(e.target.value)}
+        type={type} inputMode={type === 'number' ? 'decimal' : 'text'} value={value} onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
         className="w-full h-10 rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 transition"
       />
@@ -47,6 +48,7 @@ export default function RiskPlanner() {
   const [profile, setProfile] = useState<RiskProfileData | null>(null);
 
   // Calculator inputs
+  const [symbol, setSymbol] = useState('');
   const [equity, setEquity] = useState('');
   const [entry, setEntry] = useState('');
   const [sl, setSl] = useState('');
@@ -76,6 +78,8 @@ export default function RiskPlanner() {
     });
   }, []);
 
+  const instrumentSpec = symbol.trim() ? getInstrumentSpec(symbol) : DEFAULT_INSTRUMENT_SPEC;
+
   const calc = calculatePreTradeRisk({
     accountEquity: equity ? parseFloat(equity) : null,
     entryPrice: entry ? parseFloat(entry) : null,
@@ -84,6 +88,8 @@ export default function RiskPlanner() {
     riskPct: riskPct ? parseFloat(riskPct) : null,
     riskAmount: riskAmt ? parseFloat(riskAmt) : null,
     positionSize: null,
+    pointValue: instrumentSpec.pointValue,
+    direction,
   });
 
   const hasResult = calc.missingFields.length === 0 || (calc.slDistance !== null);
@@ -189,6 +195,16 @@ export default function RiskPlanner() {
           <CardDescription>فیلدهای موجود را پر کنید — محاسبات خودکار هستند</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
+          {/* Symbol */}
+          <NumInput
+            label="نماد معاملاتی (Symbol)"
+            value={symbol}
+            onChange={v => setSymbol(v.toUpperCase())}
+            placeholder="مثلاً XAUUSD، EURUSD، USDJPY"
+            hint={symbol.trim() ? instrumentSpec.label : 'برای محاسبه درست حجم لات، نماد را وارد کنید — در غیر این‌صورت ارزش هر واحد قیمت پیش‌فرض ۱ دلار در نظر گرفته می‌شود'}
+            type="text"
+          />
+
           {/* Direction */}
           <div className="flex gap-3">
             {(['long', 'short'] as const).map(d => (

@@ -32,7 +32,6 @@ import {
 import { formatDateFa } from "../lib/i18n";
 import { getByDay, getBySession } from "../services/performanceService";
 import { useAppStore } from "../store/useAppStore";
-import { useShallow } from "zustand/react/shallow";
 import { getTradingDateKey, getTradingDateRange, getTradingMonthKey } from "../lib/tradingTime";
 
 // ══════════════════════════════════════════════════════════════════
@@ -72,6 +71,7 @@ const RESULT_BG: Record<string, string> = {
   loss: "bg-rose-500/15", "partial-loss": "bg-amber-500/15",
   open: "bg-blue-500/15",
 };
+
 const MOOD_EMOJI: Record<number, string> = {
   1: "😞", 2: "😕", 3: "😐", 4: "🙂", 5: "😄",
 };
@@ -117,9 +117,11 @@ interface DashboardData {
   sessionProgress: Map<string, SessionProgress>;
 }
 
-async function loadDashboardData(): Promise<DashboardData> {
+async function loadDashboardData(queryFrom?: number, queryTo?: number): Promise<DashboardData> {
   const [trades, sessions, journals, strategies, todayJournal] = await Promise.all([
-    tradeService.getAllTrades(),
+    queryFrom !== undefined && queryTo !== undefined
+      ? tradeService.getTradesByDateRange(queryFrom, queryTo)
+      : tradeService.getTradesByDateRange(Date.now() - 90 * 24 * 60 * 60 * 1000, Date.now()),
     analysisService.getAllSessions(),
     journalService.getAllJournals(),
     strategyService.getAllStrategies(),
@@ -127,7 +129,7 @@ async function loadDashboardData(): Promise<DashboardData> {
   ]);
 
   // بارگذاری اطلاعات پیشرفت برای Session‌های نیمه‌کاره
-  const inProgress = sessions.filter(s => s.status === "in-progress");
+  const inProgress = sessions.filter(s => s.status === "in-progress").slice(0, 12);
   const sessionProgress = new Map<string, SessionProgress>();
 
   await Promise.all(inProgress.map(async session => {
@@ -167,29 +169,18 @@ async function loadDashboardData(): Promise<DashboardData> {
 
 export default function Dashboard() {
   const [, setLocation] = useLocation();
-  const {
-    tradingTimeMode,
-    brokerUtcOffsetMinutes,
-    dashShowTrades,
-    dashShowWinRate,
-    dashShowPnl,
-    dashShowAvgR,
-    dashShowRecentTrades,
-    dashShowLastJournal,
-    dashShowAdherence,
-  } = useAppStore(useShallow(s => ({
-    tradingTimeMode: s.tradingTimeMode,
-    brokerUtcOffsetMinutes: s.brokerUtcOffsetMinutes,
-    dashShowTrades: s.dashShowTrades,
-    dashShowWinRate: s.dashShowWinRate,
-    dashShowPnl: s.dashShowPnl,
-    dashShowAvgR: s.dashShowAvgR,
-    dashShowRecentTrades: s.dashShowRecentTrades,
-    dashShowLastJournal: s.dashShowLastJournal,
-    dashShowAdherence: s.dashShowAdherence,
-  })));
+  const tradingTimeMode = useAppStore(s => s.tradingTimeMode);
+  const brokerUtcOffsetMinutes = useAppStore(s => s.brokerUtcOffsetMinutes);
+  const dashShowTrades = useAppStore(s => s.dashShowTrades);
+  const dashShowWinRate = useAppStore(s => s.dashShowWinRate);
+  const dashShowPnl = useAppStore(s => s.dashShowPnl);
+  const dashShowAvgR = useAppStore(s => s.dashShowAvgR);
+  const dashShowRecentTrades = useAppStore(s => s.dashShowRecentTrades);
+  const dashShowLastJournal = useAppStore(s => s.dashShowLastJournal);
+  const dashShowAdherence = useAppStore(s => s.dashShowAdherence);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [rangeKey, setRangeKey] = useState<RangeKey>("week");
   const [customFrom, setCustomFrom] = useState<string>(() => {
     const d = new Date(); d.setDate(d.getDate() - 30);
@@ -202,8 +193,20 @@ export default function Dashboard() {
   const customFromRef = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(() => {
-    loadDashboardData().then(setData).finally(() => setLoading(false));
-  }, []);
+    setLoading(true);
+    setError(null);
+    const selected = rangeKey === "custom"
+      ? {
+          from: getTradingDateRange(customFrom).from,
+          to: getTradingDateRange(customTo).to,
+        }
+      : getDateRange(rangeKey);
+    const duration = Math.max(24 * 60 * 60 * 1000, selected.to - selected.from);
+    return loadDashboardData(Math.max(0, selected.from - duration), selected.to)
+      .then(setData)
+      .catch(() => setError("بارگذاری داشبورد انجام نشد. لطفاً دوباره تلاش کنید."))
+      .finally(() => setLoading(false));
+  }, [rangeKey, customFrom, customTo]);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {
@@ -454,22 +457,35 @@ export default function Dashboard() {
     );
   }
 
+  if (error || !data) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 text-center" dir="rtl">
+        <AlertCircle className="h-10 w-10 text-destructive" />
+        <p className="text-muted-foreground">{error || "اطلاعات داشبورد در دسترس نیست."}</p>
+        <Button variant="outline" onClick={reload}>تلاش مجدد</Button>
+      </div>
+    );
+  }
+
   // ══════════════════════════════════════════════
   // کاربر جدید — Empty State
   // ══════════════════════════════════════════════
   if (isNewUser) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[70vh] text-center gap-6 px-4" dir="rtl">
-        <div className="w-20 h-20 rounded-3xl bg-primary/10 flex items-center justify-center">
-          <Target className="w-10 h-10 text-primary" />
+      <div className="hero-empty-state relative overflow-hidden flex flex-col items-center justify-center min-h-[70vh] text-center gap-6 px-4 rounded-[2rem] border border-primary/10" dir="rtl">
+        <div className="absolute -top-24 -left-20 h-72 w-72 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-32 -right-20 h-80 w-80 rounded-full bg-cyan-500/10 blur-3xl pointer-events-none" />
+        <div className="relative w-20 h-20 rounded-[1.6rem] bg-gradient-to-br from-primary to-indigo-400 flex items-center justify-center shadow-xl shadow-primary/25">
+          <Target className="w-10 h-10 text-primary-foreground" />
         </div>
-        <div>
-          <h1 className="text-2xl font-bold mb-2">به TraderMind خوش آمدی</h1>
-          <p className="text-muted-foreground max-w-sm">
+        <div className="relative">
+          <p className="text-xs font-semibold tracking-[0.22em] text-primary mb-3">TRADERMIND OS</p>
+          <h1 className="text-2xl sm:text-3xl font-bold mb-2">به TraderMind خوش آمدی</h1>
+          <p className="text-muted-foreground max-w-md leading-7">
             اولین استراتژی‌ات را ایجاد کن تا مسیر تحلیل و ژورنال‌نویسی حرفه‌ای را شروع کنیم.
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex flex-col sm:flex-row gap-3">
           <Link href="/strategies/new">
             <Button size="lg" className="gap-2">
               <Plus className="w-5 h-5" /> ایجاد اولین استراتژی
@@ -481,13 +497,13 @@ export default function Dashboard() {
             </Button>
           </Link>
         </div>
-        <div className="grid grid-cols-3 gap-4 mt-4 text-sm text-muted-foreground max-w-sm w-full">
+        <div className="relative grid grid-cols-3 gap-3 mt-4 text-sm text-muted-foreground max-w-md w-full">
           {[
             { icon: Target, text: "استراتژی بساز" },
             { icon: ActivitySquare, text: "تحلیل کن" },
             { icon: BarChart3, text: "رشد کن" },
           ].map(({ icon: Icon, text }) => (
-            <div key={text} className="flex flex-col items-center gap-2 p-3 rounded-xl border border-dashed">
+            <div key={text} className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-primary/15 bg-background/40 backdrop-blur-sm">
               <Icon className="w-5 h-5 opacity-50" />
               <span>{text}</span>
             </div>
@@ -503,37 +519,30 @@ export default function Dashboard() {
   return (
     <div className="space-y-5 animate-in fade-in duration-400" dir="rtl">
 
-      {/* ━━━━━━━━━━━━━━━━ 1. هدر داشبورد ━━━━━━━━━━━━━━━━ */}
-      <section className="dashboard-hero relative overflow-hidden rounded-[1.75rem] border border-primary/20 bg-gradient-to-br from-primary/[.16] via-card to-card shadow-[0_18px_60px_hsl(var(--primary)/.10)]">
-        <div className="absolute -left-16 -top-24 h-64 w-64 rounded-full bg-primary/15 blur-3xl" aria-hidden="true" />
-        <div className="absolute -bottom-24 right-1/3 h-48 w-48 rounded-full bg-accent/10 blur-3xl" aria-hidden="true" />
-        <div className="relative flex flex-col gap-7 p-5 sm:p-7 lg:flex-row lg:items-end lg:justify-between lg:p-8">
-          <div className="max-w-2xl">
-            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs font-semibold text-primary">
-              <span className="rounded-full bg-primary/10 px-3 py-1.5">مرکز فرمان TraderMind</span>
-              <span className="rounded-full border border-border/70 bg-background/40 px-3 py-1.5 text-muted-foreground">
-                داشبورد عملکرد
-              </span>
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{getGreeting()}</h1>
-            <p className="mt-3 max-w-xl text-sm leading-7 text-muted-foreground sm:text-base">{getGreetingSub()}</p>
-          </div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <Link href="/analysis/new" className="flex-1 sm:flex-none">
-              <Button className="h-11 w-full gap-2 rounded-xl px-5 shadow-lg shadow-primary/20">
-                <ActivitySquare className="w-4 h-4" />
-                <span>شروع تحلیل جدید</span>
-              </Button>
-            </Link>
-            <Link href="/journal/trades/new" className="flex-1 sm:flex-none">
-              <Button variant="secondary" className="h-11 w-full gap-2 rounded-xl border border-border/80 px-5">
-                <Plus className="w-4 h-4" />
-                <span>ثبت معامله</span>
-              </Button>
-            </Link>
-          </div>
+      {/* ━━━━━━━━━━━━━━━━ 1. خوش‌آمدگویی ━━━━━━━━━━━━━━━━ */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{getGreeting()} 👋</h1>
+          <p className="text-muted-foreground mt-1">{getGreetingSub()}</p>
         </div>
-      </section>
+        {/* دکمه‌های اصلی */}
+        <div className="flex gap-2 shrink-0">
+          <Link href="/analysis/new">
+            <Button className="gap-2">
+              <ActivitySquare className="w-4 h-4" />
+              <span className="hidden sm:inline">شروع تحلیل جدید</span>
+              <span className="sm:hidden">تحلیل</span>
+            </Button>
+          </Link>
+          <Link href="/journal/trades/new">
+            <Button variant="secondary" className="gap-2">
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">ثبت معامله</span>
+              <span className="sm:hidden">معامله</span>
+            </Button>
+          </Link>
+        </div>
+      </div>
 
       {/* ━━━━━━━━━━━━━━━━ 2. تحلیل‌های نیمه‌کاره ━━━━━━━━━━━━━━━━ */}
       {inProgressSessions.length > 0 && (
@@ -590,20 +599,20 @@ export default function Dashboard() {
       )}
 
       {/* ━━━━━━━━━━━━━━━━ 3. وضعیت امروز + شروع تحلیل ━━━━━━━━━━━━━━━━ */}
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
 
         {/* وضعیت امروز */}
-        <Card className="dashboard-panel">
-          <CardHeader className="border-b border-border/60 pb-4">
+        <Card>
+          <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
-              <Clock className="w-4 h-4 text-primary" /> وضعیت امروز
+              <span className="text-lg">📅</span> وضعیت امروز
             </CardTitle>
           </CardHeader>
-          <CardContent className="pt-5">
+          <CardContent>
             {data?.todayJournal ? (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-2">
-                   <MiniStat label="حال کلی" value={moodLabel(data.todayJournal.mood)} />
+                  <MiniStat label="حال کلی" value={`${MOOD_EMOJI[Math.round(data.todayJournal.mood)]} ${moodLabel(data.todayJournal.mood)}`} />
                   <MiniStat label="سطح انرژی" value={`${data.todayJournal.energyLevel ?? data.todayJournal.mood}/۱۰`} />
                   <MiniStat label="تمرکز" value={`${data.todayJournal.focusLevel ?? 5}/۱۰`} />
                   <MiniStat label="استرس" value={`${data.todayJournal.stressLevel ?? 3}/۱۰`} />
@@ -633,16 +642,14 @@ export default function Dashboard() {
         </Card>
 
         {/* شروع تحلیل جدید */}
-        <Card className="dashboard-panel relative flex flex-col justify-between overflow-hidden border-primary/25 bg-gradient-to-br from-primary/[.16] via-primary/[.06] to-card">
-          <div className="absolute -left-10 bottom-0 h-36 w-36 rounded-full bg-primary/10 blur-2xl" aria-hidden="true" />
-          <CardContent className="relative flex h-full flex-col justify-between gap-6 p-6 sm:p-7">
+        <Card className="flex flex-col justify-between bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+          <CardContent className="p-6 flex flex-col h-full justify-between gap-4">
             <div>
-              <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/20">
-                <ActivitySquare className="w-6 h-6 text-primary-foreground" />
+              <div className="w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center mb-4">
+                <ActivitySquare className="w-6 h-6 text-primary" />
               </div>
-              <p className="mb-1 text-xs font-semibold uppercase tracking-[.16em] text-primary">تمرکز بعدی</p>
-              <h3 className="text-xl font-bold">شروع تحلیل جدید</h3>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              <h3 className="text-lg font-bold">شروع تحلیل جدید</h3>
+              <p className="text-sm text-muted-foreground mt-1">
                 استراتژی خود را انتخاب کن و تحلیل گام‌به‌گام را شروع کن.
               </p>
             </div>
@@ -655,7 +662,7 @@ export default function Dashboard() {
               {lastUsedStrategy && (
                 <Link href={`/analysis/new?strategyId=${lastUsedStrategy.strategy.id}`}>
                   <Button variant="outline" size="icon" title="شروع با آخرین استراتژی">
-                    <Zap className="w-4 h-4 text-primary" />
+                    <Zap className="w-4 h-4" />
                   </Button>
                 </Link>
               )}
@@ -665,8 +672,8 @@ export default function Dashboard() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━ 4. خلاصه عملکرد ━━━━━━━━━━━━━━━━ */}
-      <Card className="dashboard-panel">
-        <CardHeader className="border-b border-border/60 pb-4">
+      <Card>
+        <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <CardTitle className="text-base flex items-center gap-2">
               <BarChart3 className="w-4 h-4 text-primary" /> خلاصه عملکرد
@@ -718,14 +725,6 @@ export default function Dashboard() {
               <BarChart3 className="w-8 h-8 opacity-20" />
               <p className="text-sm">هیچ معامله‌ای در {RANGE_LABELS[rangeKey]} ثبت نشده است.</p>
             </div>
-          ) : !dashShowTrades && !dashShowWinRate && !dashShowPnl && !dashShowAvgR ? (
-            <div className="flex flex-col items-center gap-2 py-6 text-center text-muted-foreground">
-              <LayoutDashboard className="w-8 h-8 opacity-25" />
-              <p className="text-sm">همه معیارهای این بخش در تنظیمات پنهان شده‌اند.</p>
-              <Link href="/settings">
-                <Button variant="outline" size="sm">شخصی‌سازی داشبورد</Button>
-              </Link>
-            </div>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {dashShowTrades && (
@@ -733,7 +732,6 @@ export default function Dashboard() {
                   label="تعداد معاملات"
                   value={rangedStats.total.toLocaleString("fa-IR")}
                   sub={`${rangedStats.closedCount.toLocaleString("fa-IR")} بسته`}
-                  accent="blue"
                 />
               )}
               {dashShowWinRate && (
@@ -741,7 +739,6 @@ export default function Dashboard() {
                   label="درصد برد"
                   value={`${rangedStats.winRate.toFixed(1)}٪`}
                   valueClass={rangedStats.winRate >= 50 ? "text-emerald-500" : "text-rose-500"}
-                  accent="emerald"
                 />
               )}
               {dashShowPnl && (
@@ -749,7 +746,6 @@ export default function Dashboard() {
                   label="سود / ضرر"
                   value={`${rangedStats.totalPnl >= 0 ? "+" : ""}$${rangedStats.totalPnl.toFixed(2)}`}
                   valueClass={rangedStats.totalPnl >= 0 ? "text-emerald-500" : "text-rose-500"}
-                  accent={rangedStats.totalPnl >= 0 ? "emerald" : "rose"}
                 />
               )}
               {dashShowAvgR && (
@@ -761,7 +757,6 @@ export default function Dashboard() {
                     : rangedStats.avgR >= 0 ? "text-emerald-500"
                     : "text-rose-500"
                   }
-                  accent="violet"
                 />
               )}
             </div>
@@ -922,7 +917,7 @@ export default function Dashboard() {
       )}
 
       {/* ━━━━━━━━━━━━━━━━ 5. معاملات اخیر + ژورنال‌ها ━━━━━━━━━━━━━━━━ */}
-      <div className={`grid gap-4 ${dashShowRecentTrades && dashShowLastJournal ? "lg:grid-cols-2" : ""}`}>
+      <div className="grid gap-4 lg:grid-cols-2">
 
         {/* آخرین معاملات */}
         {dashShowRecentTrades && <Card className="flex flex-col">
@@ -1019,7 +1014,7 @@ export default function Dashboard() {
       </div>
 
       {/* ━━━━━━━━━━━━━━━━ 6. آخرین استراتژی + پایبندی ━━━━━━━━━━━━━━━━ */}
-      <div className={`grid gap-4 ${lastUsedStrategy && dashShowAdherence ? "lg:grid-cols-2" : ""}`}>
+      <div className="grid gap-4 lg:grid-cols-2">
 
         {/* آخرین استراتژی */}
         {lastUsedStrategy && (
@@ -1439,21 +1434,13 @@ function KpiCard({
   );
 }
 
-function StatCard({ label, value, sub, valueClass, accent = "blue" }: {
+function StatCard({ label, value, sub, valueClass }: {
   label: string; value: string; sub?: string; valueClass?: string;
-  accent?: "blue" | "emerald" | "rose" | "violet";
 }) {
-  const accentStyles = {
-    blue: "from-blue-500/15 to-transparent border-blue-500/20",
-    emerald: "from-emerald-500/15 to-transparent border-emerald-500/20",
-    rose: "from-rose-500/15 to-transparent border-rose-500/20",
-    violet: "from-violet-500/15 to-transparent border-violet-500/20",
-  }[accent];
   return (
-    <div className={`relative overflow-hidden p-4 rounded-2xl border bg-gradient-to-br ${accentStyles} bg-card/70 space-y-1.5`}>
-      <div className="absolute -left-5 -top-5 h-16 w-16 rounded-full bg-primary/5 blur-xl" />
-      <p className="relative text-xs font-medium text-muted-foreground">{label}</p>
-      <p className={`relative text-2xl font-bold tracking-tight ${valueClass ?? ""}`}>{value}</p>
+    <div className="p-3 rounded-xl border bg-card/50 space-y-1">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={`text-xl font-bold ${valueClass ?? ""}`}>{value}</p>
       {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
     </div>
   );

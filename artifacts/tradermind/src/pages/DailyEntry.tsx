@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { t, formatDateFullFa, toDateStr } from "../lib/i18n";
 import { cn } from "../lib/utils";
 import { useNavigationGuard } from "../navigation/NavigationGuard";
+import { useAppStore } from "../store/useAppStore";
 
 // ================================================================
 // کامپوننت‌های کمکی
@@ -235,6 +236,7 @@ function formToJournal(form: FormData, date: string): Omit<DailyJournal, 'id' | 
 export default function DailyEntry() {
   const { date } = useParams<{ date: string }>();
   const [, setLocation] = useLocation();
+  const journalAutosave = useAppStore(s => s.journalAutosave);
 
   const [form, setForm] = useState<FormData>(defaultForm);
   const [customEmotions, setCustomEmotions] = useState<string[]>([]);
@@ -294,10 +296,14 @@ export default function DailyEntry() {
   // Autosave
   useEffect(() => {
     if (!hasLoaded) return;
+    if (!journalAutosave) {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      return;
+    }
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => saveJournal(form, true), 1500);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [form, hasLoaded]);
+  }, [form, hasLoaded, journalAutosave, saveJournal]);
 
   const update = <K extends keyof FormData>(key: K, value: FormData[K]) =>
     setForm(prev => ({ ...prev, [key]: value }));

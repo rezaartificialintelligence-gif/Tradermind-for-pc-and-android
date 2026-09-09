@@ -782,7 +782,7 @@ export default function Settings() {
         <SwitchRow label="درصد برد" checked={store.dashShowWinRate} onChange={store.setDashShowWinRate} />
         <SwitchRow label="مجموع سود/زیان" checked={store.dashShowPnl} onChange={store.setDashShowPnl} />
         <SwitchRow label="میانگین R:R" checked={store.dashShowAvgR} onChange={store.setDashShowAvgR} />
-        <SwitchRow label="آخرین معاملات" checked={store.dashShowRecentTrades} onChange={store.setDashShowRecentTrades} />
+        <SwitchRow label="آخرین تحلیل‌ها" checked={store.dashShowRecentTrades} onChange={store.setDashShowRecentTrades} />
         <SwitchRow label="آخرین ژورنال روزانه" checked={store.dashShowLastJournal} onChange={store.setDashShowLastJournal} />
         <SwitchRow label="میزان پایبندی به استراتژی" checked={store.dashShowAdherence} onChange={store.setDashShowAdherence} />
       </Section>
@@ -884,6 +884,16 @@ export default function Settings() {
               <span className="font-medium">{t.settings.localStorage}</span>
             </div>
           </div>
+           <div className="pt-2 border-t">
+             <a
+               href={`${import.meta.env.BASE_URL}tradermind-user-guide-fa.pdf`}
+               download="tradermind-user-guide-fa.pdf"
+               className="inline-flex w-full items-center justify-center rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
+             >
+               <Download className="w-4 h-4 me-2" />
+               دانلود راهنمای کامل TraderMind
+             </a>
+           </div>
         </div>
       </Section>
 

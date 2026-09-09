@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { analysisService } from "../services/analysisService";
 import { strategyService } from "../services/strategyService";
-import { db, AnalysisSession, Strategy, Phase, Step, Trade } from "../db/database";
+import { db, AnalysisSession, Strategy, Phase, Step, Trade, StrategySetupDefinition } from "../db/database";
 import { Button } from "../components/ui/button";
 import { Card, CardContent } from "../components/ui/card";
 import { Label } from "../components/ui/label";
@@ -14,7 +14,7 @@ import { Progress } from "../components/ui/progress";
 import { Badge } from "../components/ui/badge";
 import {
   ArrowRight, Check, CheckCircle, XCircle, Pause, ChevronLeft,
-  TrendingUp, TrendingDown, Clock, X, Camera, Search,
+  TrendingUp, TrendingDown, Clock, X, Camera, Search, AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { openImagePicker, fileToCompressedDataUrl } from "../lib/imageCompression";
@@ -22,12 +22,18 @@ import { extractInitialFeatures, findSimilarScreenshots } from "../services/visu
 import VisualSimilarityPanel from "../components/VisualSimilarityPanel";
 import StoredImage from "../components/StoredImage";
 import { TradeScreenshot } from "../types/screenshot";
+import { useAppStore } from "../store/useAppStore";
 
 type ViewMode = 'runner' | 'phaseSummary' | 'finalDecision' | 'finished';
 
 export default function SessionRunner() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
+  const analysisAutosave = useAppStore(s => s.analysisAutosave);
+  const analysisPhaseSummary = useAppStore(s => s.analysisPhaseSummary);
+  const analysisConfirmPhase = useAppStore(s => s.analysisConfirmPhase);
+  const analysisShowNextStep = useAppStore(s => s.analysisShowNextStep);
+  const analysisProgressBar = useAppStore(s => s.analysisProgressBar);
   const [session, setSession] = useState<AnalysisSession | null>(null);
   const [strategy, setStrategy] = useState<Strategy | null>(null);
   const [phases, setPhases] = useState<Phase[]>([]);
@@ -36,9 +42,12 @@ export default function SessionRunner() {
   const [results, setResults] = useState<Record<string, { value: any; answeredAt: number }>>({});
   const [viewMode, setViewMode] = useState<ViewMode>('runner');
   const [finalDecisionReason, setFinalDecisionReason] = useState('');
+  const [selectedSetupId, setSelectedSetupId] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [imageStepId, setImageStepId] = useState<string | null>(null);
   const [allTrades, setAllTrades] = useState<Trade[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // ردیابی تعامل واقعی کاربر — auto-advance فقط بعد از پاسخ‌دهی فعال
   const hasInteractedRef = useRef(false);
 
@@ -46,32 +55,55 @@ export default function SessionRunner() {
   useEffect(() => { db.trades.toArray().then(setAllTrades); }, []);
 
   const loadData = async () => {
-    const sess = await analysisService.getSessionById(id!);
-    if (!sess) return;
-    setSession(sess);
-    setResults(JSON.parse(sess.stepResults || '{}'));
+    if (!id) return;
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const sess = await analysisService.getSessionById(id);
+      if (!sess) throw new Error('جلسه تحلیل پیدا نشد. ممکن است لینک قدیمی باشد.');
+      setSession(sess);
+      setResults(JSON.parse(sess.stepResults || '{}'));
 
-    const strat = await strategyService.getStrategyById(sess.strategyId);
-    if (!strat) return;
-    setStrategy(strat);
-    const phs = await strategyService.getPhasesByStrategyId(strat.id);
-    setPhases(phs);
+      const strat = await strategyService.getStrategyById(sess.strategyId);
+      if (!strat) throw new Error('استراتژی این جلسه پیدا نشد.');
+      setStrategy(strat);
+      try {
+        const previousDecision = JSON.parse(sess.finalDecision || '{}');
+        if (typeof previousDecision.setupId === 'string') setSelectedSetupId(previousDecision.setupId);
+      } catch {
+        setSelectedSetupId('');
+      }
+      const phs = await strategyService.getPhasesByStrategyId(strat.id);
+      if (phs.length === 0) {
+        throw new Error('این استراتژی هنوز مرحله‌ای برای تحلیل ندارد. از بخش استراتژی‌ها حداقل یک مرحله و گام بسازید.');
+      }
+      setPhases(phs);
 
-    const stps: Record<string, Step[]> = {};
-    for (const p of phs) {
-      stps[p.id] = await strategyService.getStepsByPhaseId(p.id);
+      const stps: Record<string, Step[]> = {};
+      for (const p of phs) {
+        stps[p.id] = await strategyService.getStepsByPhaseId(p.id);
+      }
+      setSteps(stps);
+
+      if (sess.currentPhaseId) {
+        const idx = phs.findIndex(p => p.id === sess.currentPhaseId);
+        if (idx !== -1) setCurrentPhaseIndex(idx);
+      }
+
+      if (sess.status !== 'in-progress') setViewMode('finished');
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : 'بارگذاری جلسه تحلیل انجام نشد.');
+    } finally {
+      setLoading(false);
     }
-    setSteps(stps);
-
-    if (sess.currentPhaseId) {
-      const idx = phs.findIndex(p => p.id === sess.currentPhaseId);
-      if (idx !== -1) setCurrentPhaseIndex(idx);
-    }
-
-    if (sess.status !== 'in-progress') setViewMode('finished');
   };
 
   const saveResults = async (newResults: typeof results) => {
+    if (!analysisAutosave) return;
+    await analysisService.updateSession(id!, { stepResults: JSON.stringify(newResults) });
+  };
+
+  const persistResults = async (newResults: typeof results) => {
     await analysisService.updateSession(id!, { stepResults: JSON.stringify(newResults) });
   };
 
@@ -168,17 +200,19 @@ export default function SessionRunner() {
 
     const timer = setTimeout(() => {
       if (currentPhaseIndex < phases.length - 1) {
-        setViewMode('phaseSummary');
+        setViewMode(analysisPhaseSummary && analysisConfirmPhase ? 'phaseSummary' : 'runner');
       } else {
         setViewMode('finalDecision');
       }
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [isPhaseComplete, currentPhaseIndex, currentPhase, phases.length]);
+  }, [isPhaseComplete, currentPhaseIndex, currentPhase, phases.length, analysisPhaseSummary, analysisConfirmPhase]);
   const handleNext = async () => {
     if (currentPhaseIndex < phases.length - 1) {
-      setViewMode('phaseSummary');
+      const showSummary = analysisPhaseSummary && analysisConfirmPhase;
+      setViewMode(showSummary ? 'phaseSummary' : 'runner');
+      if (!showSummary) await handleConfirmNextPhase();
     } else {
       setViewMode('finalDecision');
     }
@@ -190,7 +224,10 @@ export default function SessionRunner() {
     hasInteractedRef.current = false;
     setCurrentPhaseIndex(newIdx);
     setViewMode('runner');
-    await analysisService.updateSession(id!, { currentPhaseId: phases[newIdx].id });
+    await analysisService.updateSession(id!, {
+      currentPhaseId: phases[newIdx].id,
+      ...(analysisAutosave ? {} : { stepResults: JSON.stringify(results) }),
+    });
   };
 
   const handlePause = async () => {
@@ -206,7 +243,22 @@ export default function SessionRunner() {
   };
 
   const handleFinalDecision = async (choice: 'execute' | 'no-trade' | 'wait' | 'cancelled') => {
-    const finalDecision = JSON.stringify({ choice, reason: finalDecisionReason });
+    await persistResults(results);
+    const selectedSetup = (() => {
+      try {
+        const setupList = JSON.parse(strategy?.setupDefinitions || '[]') as StrategySetupDefinition[];
+        return setupList.find(setup => setup.id === selectedSetupId);
+      } catch {
+        return undefined;
+      }
+    })();
+    const finalDecision = JSON.stringify({
+      choice,
+      reason: finalDecisionReason,
+      setupId: selectedSetup?.id ?? null,
+      setupName: selectedSetup?.name ?? null,
+      liquidityClassification: selectedSetup?.liquidityClassification ?? null,
+    });
     await analysisService.updateSession(id!, { finalDecision } as any);
 
     if (choice === 'cancelled') {
@@ -276,10 +328,30 @@ export default function SessionRunner() {
     };
   }
 
-  if (!session || !strategy || phases.length === 0) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64 text-muted-foreground animate-pulse">
         در حال بارگذاری...
+      </div>
+    );
+  }
+
+  if (loadError || !session || !strategy || phases.length === 0) {
+    return (
+      <div className="max-w-xl mx-auto py-12" dir="rtl">
+        <Card className="border-amber-500/30">
+          <CardContent className="p-8 text-center space-y-4">
+            <AlertCircle className="w-12 h-12 mx-auto text-amber-500" />
+            <h2 className="text-xl font-bold">جلسهٔ تحلیل بارگذاری نشد</h2>
+            <p className="text-sm text-muted-foreground leading-7">
+              {loadError || 'اطلاعات جلسه کامل نیست.'}
+            </p>
+            <div className="flex flex-col sm:flex-row justify-center gap-2">
+              <Button onClick={() => void loadData()}>تلاش مجدد</Button>
+              <Button variant="outline" onClick={() => setLocation('/analysis')}>بازگشت به تحلیل‌ها</Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -339,6 +411,14 @@ export default function SessionRunner() {
 
   // ─── تصمیم نهایی ─────────────────────────────────────────────
   if (viewMode === 'finalDecision') {
+    let strategySetups: StrategySetupDefinition[] = [];
+    try {
+      const parsed = JSON.parse(strategy.setupDefinitions || '[]');
+      strategySetups = Array.isArray(parsed) ? parsed : [];
+    } catch {
+      strategySetups = [];
+    }
+
     return (
       <div className="max-w-2xl mx-auto py-8 animate-in fade-in">
         <div className="mb-8 text-center">
@@ -354,6 +434,30 @@ export default function SessionRunner() {
             <div className="text-sm font-medium">{phases.length} فاز · {adherencePct}٪ پیروی</div>
           </div>
           <div className="text-3xl font-bold text-primary">{adherencePct}٪</div>
+        </div>
+
+        <div className="mb-6 space-y-2">
+          <Label htmlFor="analysis-setup" className="text-sm font-medium">
+            ستاپ انتخاب‌شده برای این تحلیل
+          </Label>
+          <select
+            id="analysis-setup"
+            value={selectedSetupId}
+            onChange={event => setSelectedSetupId(event.target.value)}
+            className="h-10 w-full rounded-md border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <option value="">بدون انتخاب ستاپ</option>
+            {strategySetups.map(setup => (
+              <option key={setup.id} value={setup.id}>
+                {setup.name || 'ستاپ بدون نام'} — {setup.liquidityClassification === 'major' ? 'ماژور' : setup.liquidityClassification === 'minor' ? 'مینور' : 'تشخیص خودکار'}
+              </option>
+            ))}
+          </select>
+          {strategySetups.find(setup => setup.id === selectedSetupId)?.trigger && (
+            <p className="text-xs text-muted-foreground">
+              تریگر: {strategySetups.find(setup => setup.id === selectedSetupId)?.trigger}
+            </p>
+          )}
         </div>
 
         {/* گزینه‌های تصمیم */}
@@ -531,7 +635,7 @@ export default function SessionRunner() {
         })}
       </div>
 
-      <Progress value={overallProgress} className="h-1 mb-6 shrink-0" />
+      {analysisProgressBar && <Progress value={overallProgress} className="h-1 mb-6 shrink-0" />}
 
       {/* کارت‌های گام‌ها */}
       <div className="flex-1 overflow-y-auto min-h-0 pb-28">
@@ -791,6 +895,8 @@ export default function SessionRunner() {
         >
           {currentPhaseIndex === phases.length - 1 ? (
             <><Check className="w-4 h-4" /> تکمیل تحلیل</>
+          ) : !analysisShowNextStep ? (
+            <>ادامه تحلیل <ChevronLeft className="w-4 h-4" /></>
           ) : (
             <>فاز بعدی <ChevronLeft className="w-4 h-4" /></>
           )}

@@ -428,7 +428,11 @@ export function computePatternByDay(trades: Trade[], tag: string): PatternByDay[
 /** عملکرد یک تگ به تفکیک تایم‌فریم */
 export async function computePatternByTimeframe(trades: Trade[], tag: string): Promise<PatternByTimeframe[]> {
   const closedTrades = trades.filter(t => isClosed(t) && t.mtfAnalysis);
-  const chartSS = await db.chartScreenshots.where('patternTags').equals(tag).toArray();
+  // patternTags is stored as a JSON string, not an indexed field —
+  // must use filter() instead of where().equals() to avoid Dexie error
+  const chartSS = await db.chartScreenshots
+    .filter(ss => safeJson<string[]>(ss.patternTags, []).includes(tag))
+    .toArray();
 
   // جمع‌آوری تایم‌فریم‌ها از اسکرین‌شات‌های مستقل
   const tfCounts: Record<string, { wins: number; total: number; rVals: number[] }> = {};

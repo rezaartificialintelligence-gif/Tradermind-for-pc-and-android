@@ -7,6 +7,7 @@
 import { db, Trade, defaultPostTradeReview } from '../db/database';
 import { tradeService } from './tradeService';
 import { normalizeImportedTradeFields } from '../lib/tradeClassification';
+import { getTradingTimeConfig, parseTradingDateTimeInput } from '../lib/tradingTime';
 
 // ─── Column mapping ──────────────────────────────────────────────────────────
 
@@ -31,6 +32,7 @@ export const IMPORT_FIELDS = [
   { key: 'notes',        label: 'یادداشت',              required: false },
   { key: 'tradingSession', label: 'سشن معاملاتی',       required: false },
   { key: 'setupType',    label: 'نوع ستاپ',             required: false },
+  { key: 'tradeTrigger', label: 'تریگر ورود',           required: false },
   { key: 'entryReason',  label: 'دلیل ورود',            required: false },
   { key: 'lesson',       label: 'درس',                  required: false },
   { key: 'ignore',       label: '— نادیده گرفتن —',    required: false },
@@ -128,6 +130,7 @@ const AUTO_MAP_HINTS: Record<string, ImportFieldKey> = {
   note: 'notes', notes: 'notes', comment: 'notes', comments: 'notes',
   session: 'tradingSession', trading_session: 'tradingSession',
   setup: 'setupType', setup_type: 'setupType',
+  trigger: 'tradeTrigger', trade_trigger: 'tradeTrigger', entry_trigger: 'tradeTrigger',
   reason: 'entryReason', entry_reason: 'entryReason',
   lesson: 'lesson', learning: 'lesson',
 };
@@ -170,8 +173,23 @@ function normaliseResult(val: string): Trade['result'] | null {
 
 function parseTimestamp(val: string): number | null {
   if (!val) return null;
-  const d = new Date(val);
-  if (!isNaN(d.getTime())) return d.getTime();
+  // Explicit offsets remain authoritative. Offset-less trading timestamps are
+  // interpreted in the user's configured trading timezone, not the runtime OS.
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(val.trim())) {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) return d.getTime();
+  }
+  const localMatch = val.trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (localMatch) {
+    const [, y, mo, d, h = '0', mi = '0'] = localMatch;
+    const timestamp = parseTradingDateTimeInput(
+      `${y}-${String(Number(mo)).padStart(2, '0')}-${String(Number(d)).padStart(2, '0')}T${String(Number(h)).padStart(2, '0')}:${mi}`,
+      getTradingTimeConfig(),
+    );
+    if (!Number.isNaN(timestamp)) return timestamp;
+  }
+  const native = new Date(val);
+  if (!isNaN(native.getTime())) return native.getTime();
   // تلاش با فرمت‌های رایج
   const formats = [
     val.replace(/(\d{4})[-/](\d{2})[-/](\d{2})/, '$1-$2-$3'),
@@ -204,6 +222,9 @@ function validateRecord(
 
   if (!mapped.entryPrice?.trim()) errors.push('قیمت ورود الزامی است');
   else if (isNaN(parseFloat(mapped.entryPrice))) errors.push('قیمت ورود باید عدد باشد');
+  if (mapped.setupType?.trim() && !mapped.tradeTrigger?.trim()) {
+    errors.push('برای معامله‌ای که ستاپ دارد، تریگر ورود الزامی است');
+  }
 
   if (mapped.exitPrice && isNaN(parseFloat(mapped.exitPrice))) warnings.push('قیمت خروج باید عدد باشد');
   if (mapped.stopLoss && isNaN(parseFloat(mapped.stopLoss))) warnings.push('حد ضرر باید عدد باشد');
@@ -235,6 +256,18 @@ async function detectDuplicate(
   return { isDuplicate: false, duplicateTradeId: null };
 }
 
+function tradeFingerprint(
+  symbol: string,
+  direction: 'long' | 'short',
+  entryPrice: number,
+  openedAt: number | null,
+): string {
+  const priceStep = Math.max(Math.abs(entryPrice), 1) * 0.001;
+  const priceBucket = priceStep > 0 ? Math.round(entryPrice / priceStep) : 0;
+  const minuteBucket = openedAt == null ? 'none' : Math.round(openedAt / 60_000);
+  return `${symbol.trim().toUpperCase()}|${direction}|${priceBucket}|${minuteBucket}`;
+}
+
 // ─── CSV Preview ──────────────────────────────────────────────────────────────
 
 export async function previewCSV(
@@ -243,6 +276,9 @@ export async function previewCSV(
 ): Promise<ImportPreview> {
   const { headers, rows } = parseCSV(text);
   const existingTrades = await db.trades.toArray();
+  const seenFingerprints = new Set(
+    existingTrades.map(t => tradeFingerprint(t.symbol, t.direction, t.entryPrice, t.openedAt)),
+  );
   const parsedRows: ParsedRecord[] = [];
 
   for (const raw of rows) {
@@ -260,9 +296,14 @@ export async function previewCSV(
       const entry = parseFloat(mapped.entryPrice);
       const ts = mapped.openedAt ? parseTimestamp(mapped.openedAt) : null;
       if (dir) {
-        const dup = await detectDuplicate(mapped.symbol, dir, entry, ts, existingTrades);
-        isDuplicate = dup.isDuplicate;
-        duplicateTradeId = dup.duplicateTradeId;
+        const fingerprint = tradeFingerprint(mapped.symbol, dir, entry, ts);
+        isDuplicate = seenFingerprints.has(fingerprint);
+        if (isDuplicate) {
+          const dup = await detectDuplicate(mapped.symbol, dir, entry, ts, existingTrades);
+          duplicateTradeId = dup.duplicateTradeId;
+        } else {
+          seenFingerprints.add(fingerprint);
+        }
       }
     }
     parsedRows.push({ raw, mapped, errors, warnings, isDuplicate, duplicateTradeId });
@@ -327,6 +368,7 @@ export async function importCSV(
         lesson: m.lesson || null,
         tradingSession: m.tradingSession || null,
         setupType: m.setupType || null,
+        tradeTrigger: m.tradeTrigger || null,
         tags: m.tags ? JSON.stringify(m.tags.split(/[,;،]/).map(t => t.trim()).filter(Boolean)) : '[]',
       };
       await tradeService.createTrade({
@@ -379,6 +421,9 @@ export function validateJSONTrades(jsonText: string): JSONValidationResult {
     if (r.entryPrice === undefined && r.entry_price === undefined) {
       errors.push(`ردیف ${i + 1}: فیلد entryPrice الزامی است`);
     }
+    if (r.setupType && !String(r.tradeTrigger ?? '').trim()) {
+      errors.push(`ردیف ${i + 1}: برای setupType، فیلد tradeTrigger الزامی است`);
+    }
     if (i < 5) preview.push(r as Partial<Trade>);
   }
 
@@ -408,6 +453,9 @@ export async function importJSON(
   }
 
   const existingTrades = await db.trades.toArray();
+  const seenFingerprints = new Set(
+    existingTrades.map(t => tradeFingerprint(t.symbol, t.direction, t.entryPrice, t.openedAt)),
+  );
 
   for (const r of records) {
     const symbol = String(r.symbol ?? '').toUpperCase().trim();
@@ -418,10 +466,16 @@ export async function importJSON(
       : now;
 
     if (!symbol || !entryPrice) { skipped++; continue; }
+    if (r.setupType && !String(r.tradeTrigger ?? '').trim()) {
+      errors.push(`ردیف ${symbol}: برای setupType، فیلد tradeTrigger الزامی است`);
+      skipped++;
+      continue;
+    }
 
-    if (options.skipDuplicates) {
-      const { isDuplicate } = await detectDuplicate(symbol, direction, entryPrice, openedAt, existingTrades);
-      if (isDuplicate) { skipped++; continue; }
+    const fingerprint = tradeFingerprint(symbol, direction, entryPrice, openedAt);
+    if (options.skipDuplicates && seenFingerprints.has(fingerprint)) {
+      skipped++;
+      continue;
     }
 
     try {
@@ -449,6 +503,7 @@ export async function importJSON(
         lesson: r.lesson ? String(r.lesson) : null,
         tradingSession: r.tradingSession ? String(r.tradingSession) : null,
         setupType: r.setupType ? String(r.setupType) : null,
+        tradeTrigger: r.tradeTrigger ? String(r.tradeTrigger) : null,
         tags: r.tags ? (Array.isArray(r.tags) ? JSON.stringify(r.tags) : String(r.tags)) : '[]',
         emotions: r.emotions ? (Array.isArray(r.emotions) ? JSON.stringify(r.emotions) : String(r.emotions)) : '[]',
       };
@@ -457,6 +512,7 @@ export async function importJSON(
         ...normalizeImportedTradeFields(importedTrade),
       });
       imported++;
+      seenFingerprints.add(fingerprint);
     } catch (e) {
       errors.push(`خطا در ردیف ${symbol}: ${e}`);
       skipped++;
@@ -635,7 +691,7 @@ export async function exportTradesAsCSV(): Promise<string> {
     'id', 'symbol', 'market', 'direction', 'status', 'result',
     'entryPrice', 'exitPrice', 'stopLoss', 'takeProfit',
     'positionSize', 'riskPercentage', 'riskAmount', 'rMultiple',
-    'profitLoss', 'fees', 'openedAt', 'closedAt',
+    'profitLoss', 'fees', 'commission', 'spread', 'ticketNumber', 'openedAt', 'closedAt',
     'tradingSession', 'setupType', 'entryReason', 'lesson', 'notes', 'tags',
   ];
 
@@ -653,7 +709,8 @@ export async function exportTradesAsCSV(): Promise<string> {
     t.id, t.symbol, t.market ?? '', t.direction, t.status, t.result,
     t.entryPrice, t.exitPrice ?? '', t.stopLoss, t.takeProfit ?? '',
     t.positionSize ?? '', t.riskPercentage ?? '', t.riskAmount ?? '', t.rMultiple ?? '',
-    t.profitLoss ?? '', t.fees ?? '', dateStr(t.openedAt), dateStr(t.closedAt),
+    t.profitLoss ?? '', t.fees ?? '', t.commission ?? '', t.spread ?? '', t.ticketNumber ?? '',
+    dateStr(t.openedAt), dateStr(t.closedAt),
     t.tradingSession ?? '', t.setupType ?? '', t.entryReason ?? '', t.lesson ?? '',
     t.notes ?? '', (() => { try { return JSON.parse(t.tags ?? '[]').join(';'); } catch { return ''; } })(),
   ].map(escapeCSV).join(','));

@@ -7,7 +7,7 @@
  */
 
 import { Trade } from '../../db/database';
-import { isClosed, isWin, isLoss } from '../../lib/tradeHelpers';
+import { computeExpectancy as computeCanonicalExpectancy } from './canonical';
 
 export interface ExpectancyResult {
   expectancy: number | null;        // بر حسب R
@@ -23,45 +23,20 @@ export interface ExpectancyResult {
 
 /** محاسبه Expectancy بر اساس R-Multiple */
 export function computeExpectancy(trades: Trade[]): ExpectancyResult {
-  const closed = trades.filter(isClosed);
-  const wins = closed.filter(isWin);
-  const losses = closed.filter(isLoss);
-  const n = closed.length;
-
-  const winRate = n > 0 ? wins.length / n : null;
-  const lossRate = n > 0 ? losses.length / n : null;
-
-  // R-based
-  const winRs = wins.filter(t => t.rMultiple !== null).map(t => t.rMultiple!);
-  const lossRs = losses.filter(t => t.rMultiple !== null).map(t => t.rMultiple!);
-  const avgWinR = winRs.length ? winRs.reduce((s, v) => s + v, 0) / winRs.length : null;
-  const avgLossR = lossRs.length ? lossRs.reduce((s, v) => s + v, 0) / lossRs.length : null;
-
-  let expectancy: number | null = null;
-  if (winRate !== null && lossRate !== null && avgWinR !== null && avgLossR !== null) {
-    expectancy = winRate * avgWinR + lossRate * avgLossR;
-  }
-
-  // PnL-based
-  const winPnls = wins.filter(t => t.profitLoss !== null).map(t => t.profitLoss!);
-  const lossPnls = losses.filter(t => t.profitLoss !== null).map(t => t.profitLoss!);
-  const avgWinPnl = winPnls.length ? winPnls.reduce((s, v) => s + v, 0) / winPnls.length : null;
-  const avgLossPnl = lossPnls.length ? lossPnls.reduce((s, v) => s + v, 0) / lossPnls.length : null;
-
-  let expectancyPnl: number | null = null;
-  if (winRate !== null && lossRate !== null && avgWinPnl !== null && avgLossPnl !== null) {
-    expectancyPnl = winRate * avgWinPnl + lossRate * avgLossPnl;
-  }
+  const canonical = computeCanonicalExpectancy(trades);
+  const { sampleSize } = canonical;
+  const wins = trades.filter(t => t.status === 'closed' && (t.result === 'win' || t.result === 'partial-win'));
+  const losses = trades.filter(t => t.status === 'closed' && (t.result === 'loss' || t.result === 'partial-loss'));
 
   return {
-    expectancy,
-    expectancyPnl,
-    avgWinR,
-    avgLossR,
-    avgWinPnl,
-    avgLossPnl,
-    winRate,
-    lossRate,
-    sampleSize: n,
+    expectancy: canonical.expectancyR,
+    expectancyPnl: canonical.expectancyPnl,
+    avgWinR: canonical.avgWinR,
+    avgLossR: canonical.avgLossR,
+    avgWinPnl: canonical.avgWinPnl,
+    avgLossPnl: canonical.avgLossPnl,
+    winRate: sampleSize ? wins.length / sampleSize : null,
+    lossRate: sampleSize ? losses.length / sampleSize : null,
+    sampleSize,
   };
 }

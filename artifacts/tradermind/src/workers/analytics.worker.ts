@@ -11,6 +11,14 @@ import { Trade } from '../db/database';
 import { isWin, isLoss, isClosed } from '../lib/tradeHelpers';
 import { getTradingDateParts } from '../lib/tradingTime';
 import type { TradingTimeConfig } from '../lib/tradingTime';
+import {
+  computeDrawdown,
+  computeExpectancy,
+  computeProfitFactor,
+  computeWinRate,
+  netPnl,
+} from '../core/metrics/canonical';
+import { computeRiskMetrics } from '../core/metrics/riskMetrics';
 
 // ── Message Types ─────────────────────────────────────────────────────────────
 
@@ -99,23 +107,12 @@ function stdDev(arr: number[]): number | null {
 function computeEdge(trades: Trade[], timeConfig?: TradingTimeConfig): EdgeAnalyticsResult {
   const closed = trades.filter(isClosed);
   const wins = closed.filter(isWin);
-  const losses = closed.filter(isLoss);
-  const n = closed.length;
-  const winRate = n > 0 ? wins.length / n : null;
+  const winRate = computeWinRate(trades).winRate;
 
   const Rs = closed.filter(t => t.rMultiple !== null).map(t => t.rMultiple!);
-  const winRs = wins.filter(t => t.rMultiple !== null).map(t => t.rMultiple!);
-  const lossRs = losses.filter(t => t.rMultiple !== null).map(t => t.rMultiple!);
   const avgR = avg(Rs);
-  const lossRate = n > 0 ? losses.length / n : null;
-  const avgWinR = avg(winRs);
-  const avgLossR = avg(lossRs);
-  const expectancy = winRate !== null && lossRate !== null && avgWinR !== null && avgLossR !== null
-    ? winRate * avgWinR + lossRate * avgLossR : null;
-
-  const totalWin = wins.reduce((s, t) => s + Math.max(0, t.profitLoss ?? 0), 0);
-  const totalLoss = Math.abs(losses.reduce((s, t) => s + Math.min(0, t.profitLoss ?? 0), 0));
-  const profitFactor = totalLoss > 0 ? totalWin / totalLoss : null;
+  const expectancy = computeExpectancy(trades).expectancyR;
+  const profitFactor = computeProfitFactor(trades).profitFactor;
 
   // By symbol
   const symbolMap = new Map<string, Trade[]>();
@@ -162,17 +159,14 @@ function computeEdge(trades: Trade[], timeConfig?: TradingTimeConfig): EdgeAnaly
 }
 
 function computePerformance(trades: Trade[]): PerformanceResult {
-  const closed = trades.filter(isClosed).filter(t => t.profitLoss !== null).sort((a, b) => a.openedAt - b.openedAt);
+  const closed = trades.filter(isClosed).filter(t => netPnl(t) !== null).sort((a, b) => a.openedAt - b.openedAt);
   const wins = closed.filter(isWin);
   const losses = closed.filter(isLoss);
 
-  let peak = 0, equity = 0, maxDD = 0;
+  let equity = 0;
   const pnlCurve: { index: number; cumulative: number }[] = [];
   for (let i = 0; i < closed.length; i++) {
-    equity += closed[i].profitLoss!;
-    if (equity > peak) peak = equity;
-    const dd = peak - equity;
-    if (dd > maxDD) maxDD = dd;
+    equity += netPnl(closed[i])!;
     pnlCurve.push({ index: i + 1, cumulative: equity });
   }
 
@@ -184,13 +178,14 @@ function computePerformance(trades: Trade[]): PerformanceResult {
     else { cw = 0; cl = 0; }
   }
 
-  const winPnls = wins.map(t => t.profitLoss!);
-  const lossPnls = losses.map(t => t.profitLoss!);
+  const winPnls = wins.map(netPnl).filter((value): value is number => value !== null);
+  const lossPnls = losses.map(netPnl).filter((value): value is number => value !== null);
+  const drawdown = computeDrawdown(trades);
 
   return {
     totalPnl: equity,
-    maxDrawdown: maxDD,
-    maxDrawdownPct: peak > 0 ? (maxDD / peak) * 100 : null,
+    maxDrawdown: drawdown.maxDrawdown,
+    maxDrawdownPct: drawdown.maxDrawdownPct,
     avgWin: avg(winPnls),
     avgLoss: avg(lossPnls),
     largestWin: winPnls.length ? Math.max(...winPnls) : null,
@@ -203,6 +198,7 @@ function computePerformance(trades: Trade[]): PerformanceResult {
 
 function computeRisk(trades: Trade[]): RiskResult {
   const closed = trades.filter(isClosed);
+  const canonical = computeRiskMetrics(trades);
   const risks = closed.filter(t => t.riskPercentage !== null).map(t => t.riskPercentage!);
   const Rs = closed.filter(t => t.rMultiple !== null).map(t => t.rMultiple!);
 
@@ -216,10 +212,8 @@ function computeRisk(trades: Trade[]): RiskResult {
   const winRate = closed.length > 0 ? wins.length / closed.length : null;
   const avgWinR = avg(wins.filter(t => t.rMultiple !== null).map(t => t.rMultiple!));
   const avgLossR = avg(losses.filter(t => t.rMultiple !== null).map(t => Math.abs(t.rMultiple!)));
-  const kellyPct = winRate !== null && avgWinR !== null && avgLossR !== null && avgLossR > 0
-    ? (winRate / avgLossR - (1 - winRate) / avgWinR) * 100 : null;
-
-  const riskConsistency = avgRisk && stdDev(risks) ? (stdDev(risks)! / avgRisk) * 100 : null;
+  const kellyPct = canonical.kellyPct;
+  const riskConsistency = canonical.riskConsistency;
 
   const buckets = new Map<string, number>();
   for (const r of Rs) {

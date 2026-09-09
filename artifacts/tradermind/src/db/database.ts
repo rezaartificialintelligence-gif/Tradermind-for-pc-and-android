@@ -16,6 +16,16 @@ export function blobToObjectUrl(blob: Blob): string {
   return URL.createObjectURL(blob);
 }
 
+export type StrategyMode = 'standard' | 'major-trading' | 'session-trading';
+
+export interface StrategySetupDefinition {
+  id: string;
+  name: string;
+  trigger: string;
+  conditions: string;
+  liquidityClassification: 'major' | 'minor' | 'auto';
+}
+
 export interface Strategy {
   id: string;
   name: string;
@@ -25,6 +35,12 @@ export interface Strategy {
   isActive: boolean;
   createdAt: number;
   updatedAt: number;
+  /** ساختار اختیاری استراتژی‌های شرطی؛ برای داده‌های قدیمی nullable باقی می‌ماند. */
+  strategyMode?: StrategyMode;
+  higherTimeframes?: string;
+  lowerTimeframes?: string;
+  liquidityZones?: string;
+  setupDefinitions?: string;
 }
 
 export interface Phase {
@@ -93,6 +109,12 @@ export interface Trade {
   result: 'win' | 'loss' | 'breakeven' | 'partial-win' | 'partial-loss' | 'open' | 'cancelled';
   profitLoss: number | null;
   fees: number | null;
+  /** کمیسیون صریح معامله؛ هزینه نهایی از fees + commission + spread محاسبه می‌شود. */
+  commission?: number | null;
+  /** هزینه اسپرد به واحد پول حساب. */
+  spread?: number | null;
+  /** شماره تیکت/ثبت معامله در متاتریدر یا بروکر. */
+  ticketNumber?: string | null;
   status: 'open' | 'closed' | 'cancelled';
   openedAt: number;
   closedAt: number | null;
@@ -121,6 +143,8 @@ export interface Trade {
   // Trade context
   tradingSession: string | null;   // 'london' | 'new-york' | 'asia' | 'overlap' | 'other'
   setupType: string | null;        // 'break-and-retest' | 'fvg' | 'liquidity-grab' | ...
+  /** تریگر واقعی ورود؛ برای معاملات قدیمی ممکن است undefined باشد. */
+  tradeTrigger?: string | null;
   timezone: string | null;
   entryReason: string | null;      // free-text reason for entry
   lesson: string | null;           // post-trade lesson (separate from review)
@@ -152,6 +176,12 @@ export interface MTFAnalysis {
   '15M': MTFTimeframeAnalysis;
   '5M': MTFTimeframeAnalysis;
   '1M': MTFTimeframeAnalysis;
+  scenario?: {
+    status: 'liquidity-hunt' | 'confirmation' | 'scenario-failed' | 'no-trade' | '';
+    condition: string;
+    noTradeReason: string;
+    invalidation: string;
+  };
 }
 
 export const defaultMTFTimeframe: MTFTimeframeAnalysis = {
@@ -918,6 +948,7 @@ export interface Account {
 export interface TradingBox {
   id: string;
   name: string;               // مثلاً «باکس ۱» یا «آزمون استراتژی بهار»
+  accountId: string | null;   // هر باکس به یک حساب تعلق دارد
   description: string | null;
   targetTradeCount: number | null;  // هدف تعداد معاملات
   color: string;
@@ -1353,22 +1384,10 @@ class TraderMindDB extends Dexie {
       screenshotCollections: 'id, name, isDefault, createdAt',
       accounts: 'id, name, isDefault, createdAt',
       tradingBoxes: 'id, name, status, createdAt',
-    }).upgrade(async tx => {
-      // تبدیل dataUrl → imageBlob برای تمام رکوردهای موجود
-      const screenshots = await tx.table('chartScreenshots').toArray();
-      for (const ss of screenshots) {
-        if (ss.dataUrl && ss.dataUrl.startsWith('data:') && !ss.imageBlob) {
-          try {
-            const blob = dataUrlToBlob(ss.dataUrl);
-            await tx.table('chartScreenshots').update(ss.id, {
-              imageBlob: blob,
-              dataUrl: '',      // پاکسازی Base64 پس از تبدیل موفق
-            });
-          } catch {
-            // اگر تبدیل شکست خورد، dataUrl را نگه می‌داریم
-          }
-        }
-      }
+    }).upgrade(() => {
+      // مهاجرت Base64 به Blob عمداً در schema upgrade انجام نمی‌شود.
+      // تبدیل همهٔ تصاویر می‌تواند بازشدن کل برنامه را روی موبایل قفل کند؛
+      // این کار بعد از بازشدن DB و به‌صورت batch انجام می‌شود.
     });
 
     // ====================================================
@@ -1429,10 +1448,73 @@ class TraderMindDB extends Dexie {
       accounts: 'id, name, isDefault, createdAt',
       tradingBoxes: 'id, name, status, createdAt',
     });
+
+    // نسخه ۲۲: اتصال هر باکس معاملاتی به یک حساب
+    this.version(22).stores({
+      tradingBoxes: 'id, name, accountId, status, createdAt',
+    }).upgrade(tx => {
+      return tx.table('tradingBoxes').toCollection().modify((box: TradingBox) => {
+        if (box.accountId === undefined) box.accountId = null;
+      });
+    });
+
+    // نسخه ۲۳: مهاجرت‌های حجیم از چرخهٔ بازشدن دیتابیس خارج شده‌اند.
+    this.version(23).upgrade(() => undefined);
+
+    // نسخه ۲۴: تریگر ورودِ معامله. فیلد عمداً nullable/اختیاری است تا رکوردهای
+    // قدیمی که قبل از اجباری شدن تریگر ساخته شده‌اند همچنان خوانا بمانند.
+    this.version(24).stores({
+      trades: [
+        'id', 'sessionId', 'strategyId', 'accountId', 'boxId',
+        'symbol', 'direction', 'result', 'status', 'openedAt', 'closedAt',
+        '[symbol+openedAt]', '[accountId+openedAt]', '[strategyId+result]', '[strategyId+closedAt]',
+      ].join(', '),
+    });
   }
 }
 
 export const db = new TraderMindDB();
+
+/**
+ * تبدیل تدریجی تصاویر قدیمی بعد از بازشدن برنامه.
+ * این تابع عمداً توسط startup با تأخیر اجرا می‌شود تا routeهای اصلی ابتدا در دسترس باشند.
+ */
+export async function migrateChartScreenshotsToBlobs(batchSize = 20): Promise<number> {
+  const screenshots = await db.chartScreenshots.toArray();
+  let migrated = 0;
+
+  for (let offset = 0; offset < screenshots.length; offset += batchSize) {
+    const batch = screenshots.slice(offset, offset + batchSize);
+    const updates = batch
+      .filter(screenshot =>
+        typeof screenshot.dataUrl === 'string' &&
+        screenshot.dataUrl.startsWith('data:') &&
+        !screenshot.imageBlob
+      )
+      .map(screenshot => {
+        try {
+          return {
+            key: screenshot.id,
+            changes: {
+              imageBlob: dataUrlToBlob(screenshot.dataUrl),
+              dataUrl: '',
+            },
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter((update): update is { key: string; changes: { imageBlob: Blob; dataUrl: string } } => Boolean(update));
+
+    if (updates.length > 0) {
+      await db.chartScreenshots.bulkUpdate(updates);
+      migrated += updates.length;
+    }
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+  }
+
+  return migrated;
+}
 
 /** مقادیر پیش‌فرض */
 export const defaultPreTradingState: PreTradingState = {

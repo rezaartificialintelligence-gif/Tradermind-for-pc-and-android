@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import { strategyService } from "../services/strategyService";
-import { Strategy, Phase, Step, Rule } from "../db/database";
+import { Strategy, Phase, Step, Rule, StrategySetupDefinition, StrategyMode } from "../db/database";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
@@ -31,13 +31,13 @@ function SortablePhaseItem({ phase, isActive, onClick }: { phase: Phase; isActiv
       ref={setNodeRef}
       style={style}
       onClick={onClick}
-      className={`flex items-center gap-1 p-2 rounded-md cursor-pointer group transition-colors
+      className={`flex items-center gap-2 p-3 rounded-md cursor-pointer group transition-colors
         ${isActive ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
     >
       <span {...attributes} {...listeners} className="cursor-grab text-muted-foreground shrink-0" onClick={e => e.stopPropagation()}>
-        <GripVertical className="w-3.5 h-3.5" />
+        <GripVertical className="w-4 h-4" />
       </span>
-      <span className="text-sm font-medium truncate flex-1">{phase.name || 'Unnamed Phase'}</span>
+      <span className="text-sm font-medium truncate flex-1">{phase.name || 'مرحله بدون نام'}</span>
     </div>
   );
 }
@@ -60,15 +60,15 @@ function SortableStepCard({
   const [showRules, setShowRules] = useState(false);
 
   const STEP_TYPE_LABELS: Record<string, string> = {
-    checkbox: 'Checkbox (Task)',
-    text: 'Short Text',
-    textarea: 'Long Text',
-    number: 'Number',
-    rating: 'Rating (1-5)',
-    select: 'Single Choice',
-    'multi-select': 'Multiple Choice',
-    date: 'Date / Time',
-    image: 'Image / Screenshot',
+    checkbox: 'چک‌باکس',
+    text: 'متن کوتاه',
+    textarea: 'متن بلند',
+    number: 'عدد',
+    rating: 'امتیاز (۱ تا ۵)',
+    select: 'انتخاب تکی',
+    'multi-select': 'انتخاب چندگانه',
+    date: 'تاریخ / زمان',
+    image: 'تصویر / اسکرین‌شات',
   };
 
   return (
@@ -83,7 +83,7 @@ function SortableStepCard({
               value={step.name}
               onChange={e => onUpdate(step.id, { name: e.target.value })}
               className="font-medium flex-1"
-              placeholder="Step title"
+              placeholder="عنوان گام"
             />
             <div className="flex items-center gap-1 shrink-0">
               <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground" onClick={() => onDuplicate(step.id)} title="Duplicate step">
@@ -199,6 +199,7 @@ export default function StrategyBuilder() {
   const [rules, setRules] = useState<Record<string, Rule[]>>({}); // stepId -> rules
   const [isEditingMeta, setIsEditingMeta] = useState(false);
   const [metaDirty, setMetaDirty] = useState(false);
+  const [setups, setSetups] = useState<StrategySetupDefinition[]>([]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -211,6 +212,12 @@ export default function StrategyBuilder() {
     const s = await strategyService.getStrategyById(id!);
     if (!s) return;
     setStrategy(s);
+    try {
+      const parsed = JSON.parse(s.setupDefinitions || '[]');
+      setSetups(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setSetups([]);
+    }
     setMetaDirty(false);
     const p = await strategyService.getPhasesByStrategyId(s.id);
     setPhases(p);
@@ -237,7 +244,7 @@ export default function StrategyBuilder() {
     if (!strategy) return;
     const p = await strategyService.createPhase({
       strategyId: strategy.id,
-      name: 'New Phase',
+      name: 'مرحله جدید',
       description: '',
       order: phases.length,
     });
@@ -249,6 +256,49 @@ export default function StrategyBuilder() {
   const handleUpdatePhase = async (phaseId: string, data: Partial<Phase>) => {
     await strategyService.updatePhase(phaseId, data);
     setPhases(phases.map(p => p.id === phaseId ? { ...p, ...data } : p));
+  };
+
+  const handleUpdateStrategyConfig = async (data: Partial<Strategy>) => {
+    if (!strategy) return;
+    setStrategy(current => current ? { ...current, ...data } : current);
+    await strategyService.updateStrategy(strategy.id, data);
+  };
+
+  const handleFinishStrategy = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    const invalid = setups.find(setup => !setup.name.trim() || !setup.trigger.trim());
+    if (invalid) {
+      event.preventDefault();
+      toast.error('نام و تریگر همهٔ ستاپ‌ها باید تکمیل شود.');
+    }
+  };
+
+  const updateSetup = (index: number, data: Partial<StrategySetupDefinition>) => {
+    const next = setups.map((setup, setupIndex) =>
+      setupIndex === index ? { ...setup, ...data } : setup,
+    );
+    setSetups(next);
+    void handleUpdateStrategyConfig({ setupDefinitions: JSON.stringify(next) });
+  };
+
+  const addSetup = () => {
+    const next = [
+      ...setups,
+      {
+        id: crypto.randomUUID(),
+        name: '',
+        trigger: '',
+        conditions: '',
+        liquidityClassification: 'auto' as const,
+      },
+    ];
+    setSetups(next);
+    void handleUpdateStrategyConfig({ setupDefinitions: JSON.stringify(next) });
+  };
+
+  const removeSetup = (index: number) => {
+    const next = setups.filter((_, setupIndex) => setupIndex !== index);
+    setSetups(next);
+    void handleUpdateStrategyConfig({ setupDefinitions: JSON.stringify(next) });
   };
 
   useNavigationGuard({
@@ -295,7 +345,7 @@ export default function StrategyBuilder() {
     if (!activePhaseId) return;
     const s = await strategyService.createStep({
       phaseId: activePhaseId,
-      name: 'New Step',
+      name: 'گام جدید',
       description: '',
       type: 'checkbox',
       required: true,
@@ -377,7 +427,7 @@ export default function StrategyBuilder() {
   const activePhase = phases.find(p => p.id === activePhaseId);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)] animate-in fade-in">
+    <div className="flex flex-col animate-in fade-in" dir="rtl">
       {/* Header */}
       <div className="flex items-center justify-between border-b pb-4 mb-4 shrink-0">
         <div className="flex items-center gap-3">
@@ -420,21 +470,130 @@ export default function StrategyBuilder() {
             </div>
           )}
         </div>
-        <Link href="/strategies">
-          <Button>Done</Button>
+        <Link href="/strategies" onClick={handleFinishStrategy}>
+          <Button>ذخیره و پایان</Button>
         </Link>
       </div>
 
-      <div className="flex gap-4 flex-1 min-h-0">
+      <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card p-4 sm:p-5 shadow-sm shrink-0" dir="rtl">
+        <div className="mb-4">
+          <h2 className="text-lg font-bold text-primary">ساختار استراتژی</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            روش تحلیل، تایم‌فریم‌ها، نواحی نقدینگی و ستاپ‌های قابل انتخاب را قبل از ساخت چک‌لیست مشخص کنید.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="space-y-1.5">
+            <Label>نوع استراتژی</Label>
+            <Select
+              value={strategy.strategyMode ?? 'standard'}
+              onValueChange={value => void handleUpdateStrategyConfig({ strategyMode: value as StrategyMode })}
+            >
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="standard">استاندارد</SelectItem>
+                <SelectItem value="major-trading">ماژور تریدینگ</SelectItem>
+                <SelectItem value="session-trading">سشن تریدینگ</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>تایم‌فریم‌های بالاتر</Label>
+            <Input
+              value={strategy.higherTimeframes ?? ''}
+              onChange={event => void handleUpdateStrategyConfig({ higherTimeframes: event.target.value })}
+              placeholder="مثلاً 4H, 1H"
+              dir="ltr"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>تایم‌فریم‌های ورود</Label>
+            <Input
+              value={strategy.lowerTimeframes ?? ''}
+              onChange={event => void handleUpdateStrategyConfig({ lowerTimeframes: event.target.value })}
+              placeholder="مثلاً 15M, 5M, 1M"
+              dir="ltr"
+            />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+            <Label>نواحی نقدینگی</Label>
+            <Input
+              value={strategy.liquidityZones ?? ''}
+              onChange={event => void handleUpdateStrategyConfig({ liquidityZones: event.target.value })}
+              placeholder="سقف/کف ماژور، مینوری، سقف/کف سشن"
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold">ستاپ‌های قابل انتخاب در تحلیل</h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                برای هر ستاپ، شرط تشکیل تریگر و ماژور/مینور بودن ناحیه را ثبت کنید.
+              </p>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={addSetup}>
+              <Plus className="w-4 h-4 ml-1" /> افزودن ستاپ
+            </Button>
+          </div>
+          {setups.length === 0 ? (
+            <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground text-center">
+              هنوز ستاپی تعریف نشده است.
+            </div>
+          ) : (
+            <div className="grid gap-3">
+              {setups.map((setup, index) => (
+                <div key={setup.id} className="grid grid-cols-1 md:grid-cols-12 gap-2 rounded-xl border bg-background/60 p-3">
+                  <Input
+                    className="md:col-span-3"
+                    value={setup.name}
+                    onChange={event => updateSetup(index, { name: event.target.value })}
+                    placeholder="نام ستاپ"
+                  />
+                  <Input
+                    className="md:col-span-4"
+                    value={setup.trigger}
+                    onChange={event => updateSetup(index, { trigger: event.target.value })}
+                    placeholder="تریگر ورود؛ مثلاً sweep + confirmation"
+                  />
+                  <Input
+                    className="md:col-span-3"
+                    value={setup.conditions}
+                    onChange={event => updateSetup(index, { conditions: event.target.value })}
+                    placeholder="شرایط ماژور/مینور یا سشن"
+                  />
+                  <Select
+                    value={setup.liquidityClassification}
+                    onValueChange={value => updateSetup(index, { liquidityClassification: value as StrategySetupDefinition['liquidityClassification'] })}
+                  >
+                    <SelectTrigger className="md:col-span-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">خودکار</SelectItem>
+                      <SelectItem value="major">ماژور</SelectItem>
+                      <SelectItem value="minor">مینور</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="ghost" size="icon" className="md:col-span-1 text-destructive" onClick={() => removeSetup(index)}>
+                    <Trash className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-4 mt-4">
         {/* Left: Phases panel */}
-        <div className="w-56 flex flex-col border rounded-xl bg-card/50 overflow-hidden shrink-0">
+        <div className="w-full lg:w-64 flex flex-col border rounded-xl bg-card/50 shrink-0">
           <div className="p-3 border-b bg-muted/20 flex justify-between items-center">
-            <span className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Phases</span>
+            <span className="text-sm font-medium text-muted-foreground tracking-wide">مرحله‌ها</span>
             <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleAddPhase} title="Add phase">
               <Plus className="w-4 h-4" />
             </Button>
           </div>
-          <div className="flex-1 overflow-y-auto p-2">
+          <div className="p-2">
             {phases.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-6">No phases yet</p>
             ) : (
@@ -449,12 +608,12 @@ export default function StrategyBuilder() {
                           onClick={() => setActivePhaseId(p.id)}
                         />
                         {activePhaseId === p.id && (
-                          <div className="absolute right-1 top-1 hidden group-hover:flex gap-0.5">
-                            <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-foreground" onClick={e => { e.stopPropagation(); handleDuplicatePhase(p.id); }} title="Duplicate">
-                              <Copy className="w-3 h-3" />
+                          <div className="absolute left-1 top-1 flex gap-0.5 lg:hidden lg:group-hover:flex">
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-foreground" onClick={e => { e.stopPropagation(); handleDuplicatePhase(p.id); }} title="Duplicate">
+                              <Copy className="w-3.5 h-3.5" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-5 w-5 text-muted-foreground hover:text-danger" onClick={e => { e.stopPropagation(); handleDeletePhase(p.id); }} title="Delete">
-                              <Trash className="w-3 h-3" />
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-danger" onClick={e => { e.stopPropagation(); handleDeletePhase(p.id); }} title="Delete">
+                              <Trash className="w-3.5 h-3.5" />
                             </Button>
                           </div>
                         )}
@@ -468,7 +627,7 @@ export default function StrategyBuilder() {
         </div>
 
         {/* Right: Steps panel */}
-        <div className="flex-1 flex flex-col border rounded-xl bg-card overflow-hidden">
+        <div className="flex-1 flex flex-col border rounded-xl bg-card">
           {activePhase ? (
             <>
               <div className="p-4 border-b bg-muted/10 shrink-0">
@@ -477,18 +636,18 @@ export default function StrategyBuilder() {
                     value={activePhase.name}
                     onChange={e => handleUpdatePhase(activePhaseId!, { name: e.target.value })}
                     className="font-semibold text-lg bg-transparent border-transparent focus-visible:border-input focus-visible:bg-background -ml-1"
-                    placeholder="Phase Name"
+                    placeholder="نام مرحله"
                   />
                 </div>
                 <Input
                   value={activePhase.description}
                   onChange={e => handleUpdatePhase(activePhaseId!, { description: e.target.value })}
                   className="text-sm text-muted-foreground bg-transparent border-transparent focus-visible:border-input focus-visible:bg-background -ml-1 mt-1 h-7"
-                  placeholder="Phase description (optional)"
+                  placeholder="توضیح مرحله (اختیاری)"
                 />
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4">
+              <div className="p-4">
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStepDragEnd}>
                   <SortableContext items={steps.map(s => s.id)} strategy={verticalListSortingStrategy}>
                     <div className="space-y-3">
@@ -514,14 +673,14 @@ export default function StrategyBuilder() {
                   className="w-full border-dashed py-6 text-muted-foreground mt-3"
                   onClick={handleAddStep}
                 >
-                  <Plus className="w-4 h-4 mr-2" /> Add Step
+                  <Plus className="w-4 h-4 ml-2" /> افزودن گام
                 </Button>
               </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3">
-              <p>Select or create a phase to edit its steps.</p>
-              <Button variant="outline" onClick={handleAddPhase}><Plus className="w-4 h-4 mr-2" /> Add First Phase</Button>
+            <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3 py-12">
+              <p>برای ویرایش گام‌ها یک مرحله انتخاب یا ایجاد کنید.</p>
+              <Button variant="outline" onClick={handleAddPhase}><Plus className="w-4 h-4 ml-2" /> افزودن اولین مرحله</Button>
             </div>
           )}
         </div>

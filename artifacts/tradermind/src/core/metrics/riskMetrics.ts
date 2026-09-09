@@ -4,7 +4,7 @@
  */
 
 import { Trade } from '../../db/database';
-import { isClosed } from '../../lib/tradeHelpers';
+import { isClosed, coefficientOfVariation, avg as helperAvg, median as helperMedian, stdDev as helperStdDev } from '../../lib/tradeHelpers';
 
 export interface RiskMetricsResult {
   avgR: number | null;
@@ -18,37 +18,17 @@ export interface RiskMetricsResult {
   rMultipleDistribution: { r: string; count: number }[];
 }
 
-function avg(arr: number[]): number | null {
-  return arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
-}
-
-function median(arr: number[]): number | null {
-  if (!arr.length) return null;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
-function stdDev(arr: number[]): number | null {
-  const m = avg(arr);
-  if (m === null || arr.length < 2) return null;
-  const variance = arr.reduce((s, v) => s + Math.pow(v - m, 2), 0) / (arr.length - 1);
-  return Math.sqrt(variance);
-}
-
 export function computeRiskMetrics(trades: Trade[]): RiskMetricsResult {
   const closed = trades.filter(isClosed);
   const Rs = closed.filter(t => t.rMultiple !== null).map(t => t.rMultiple!);
   const risks = closed.filter(t => t.riskPercentage !== null).map(t => t.riskPercentage!);
 
-  const avgRVal = avg(Rs);
-  const stdDevR = stdDev(Rs);
-  const avgRiskPct = avg(risks);
+  const avgRVal = helperAvg(Rs);
+  const stdDevR = helperStdDev(Rs);
+  const avgRiskPct = helperAvg(risks);
 
   // Risk Consistency (CV)
-  const riskConsistency = avgRiskPct && stdDev(risks)
-    ? (stdDev(risks)! / avgRiskPct) * 100
-    : null;
+  const riskConsistency = coefficientOfVariation(risks);
 
   // Sharpe Ratio (simplified — R/stdDev)
   const sharpeRatio = avgRVal !== null && stdDevR !== null && stdDevR > 0
@@ -56,20 +36,26 @@ export function computeRiskMetrics(trades: Trade[]): RiskMetricsResult {
     : null;
 
   // Sortino Ratio (downside deviation)
-  const downside = Rs.filter(r => r < 0);
-  const downsideStd = stdDev(downside);
-  const sortinoRatio = avgRVal !== null && downsideStd !== null && downsideStd > 0
-    ? avgRVal / downsideStd
+  const downsideSquares = Rs.map(r => Math.min(0, r) ** 2);
+  const downsideDeviation = downsideSquares.length
+    ? Math.sqrt(downsideSquares.reduce((sum, value) => sum + value, 0) / downsideSquares.length)
+    : null;
+  const sortinoRatio = avgRVal !== null && downsideDeviation !== null && downsideDeviation > 0
+    ? avgRVal / downsideDeviation
     : null;
 
   // Kelly Criterion
   const wins = closed.filter(t => (t.rMultiple ?? 0) > 0);
   const losses = closed.filter(t => (t.rMultiple ?? 0) < 0);
   const winRate = closed.length > 0 ? wins.length / closed.length : null;
-  const avgWinR = avg(wins.map(t => t.rMultiple!));
-  const avgLossR = avg(losses.map(t => Math.abs(t.rMultiple!)));
-  const kellyPct = winRate !== null && avgWinR !== null && avgLossR !== null && avgLossR > 0
-    ? (winRate / avgLossR - (1 - winRate) / avgWinR) * 100
+  const avgWinR = helperAvg(wins.map(t => t.rMultiple!));
+  const avgLossR = helperAvg(losses.map(t => Math.abs(t.rMultiple!)));
+  // Kelly Criterion: f* = W - (1-W)/R, where W = win rate and R = avgWin/avgLoss (win/loss ratio).
+  // (The previous formula divided by avgLossR/avgWinR directly instead of using their ratio,
+  // which produced values with the wrong scale/sign.)
+  const winLossRatio = avgWinR !== null && avgLossR !== null && avgLossR > 0 ? avgWinR / avgLossR : null;
+  const kellyPct = winRate !== null && winLossRatio !== null && winLossRatio > 0
+    ? (winRate - (1 - winRate) / winLossRatio) * 100
     : null;
 
   // توزیع R-Multiple در bucket‌های ۰.۵
@@ -84,7 +70,7 @@ export function computeRiskMetrics(trades: Trade[]): RiskMetricsResult {
 
   return {
     avgR: avgRVal,
-    medianR: median(Rs),
+    medianR: helperMedian(Rs),
     stdDevR,
     avgRiskPct,
     riskConsistency,

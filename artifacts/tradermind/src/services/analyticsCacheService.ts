@@ -9,6 +9,12 @@ import { Trade, DailyJournal, Strategy } from '../db/database';
 import { getAllTradesForAnalytics } from '../core/repositories/tradeRepository';
 import { isWin, isLoss, isClosed } from '../lib/tradeHelpers';
 import { getTradingDateKey } from '../lib/tradingTime';
+import {
+  computeExpectancy,
+  computeProfitFactor,
+  computeTotalNetPnl,
+  netPnl,
+} from '../core/metrics/canonical';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -75,9 +81,7 @@ async function computeAnalyticsCache(): Promise<CachedAnalytics> {
   const n = closed.length;
 
   // آمار پایه
-  const totalWinPnl = wins.reduce((s, t) => s + Math.max(0, t.profitLoss ?? 0), 0);
-  const totalLossPnl = Math.abs(losses.reduce((s, t) => s + Math.min(0, t.profitLoss ?? 0), 0));
-  const profitFactor = totalLossPnl > 0 ? totalWinPnl / totalLossPnl : null;
+  const profitFactor = computeProfitFactor(trades).profitFactor;
 
   const Rs = closed.filter(t => t.rMultiple !== null).map(t => t.rMultiple!);
   const winRs = wins.filter(t => t.rMultiple !== null).map(t => t.rMultiple!);
@@ -88,9 +92,8 @@ async function computeAnalyticsCache(): Promise<CachedAnalytics> {
   const lossRate = n > 0 ? losses.length / n : null;
   const avgWinR = winRs.length ? winRs.reduce((s, v) => s + v, 0) / winRs.length : null;
   const avgLossR = lossRs.length ? lossRs.reduce((s, v) => s + v, 0) / lossRs.length : null;
-  const expectancy = winRate !== null && lossRate !== null && avgWinR !== null && avgLossR !== null
-    ? winRate * avgWinR + lossRate * avgLossR : null;
-  const totalPnl = closed.reduce((s, t) => s + (t.profitLoss ?? 0), 0);
+  const expectancy = computeExpectancy(trades).expectancyR;
+  const totalPnl = computeTotalNetPnl(trades);
 
   // Daily stats
   const byDay = new Map<string, { trades: Trade[] }>();
@@ -108,7 +111,7 @@ async function computeAnalyticsCache(): Promise<CachedAnalytics> {
       wins: dWins.length,
       losses: dt.filter(isLoss).length,
       winRate: dt.length > 0 ? dWins.length / dt.length : null,
-      totalPnl: dt.reduce((s, t) => s + (t.profitLoss ?? 0), 0),
+      totalPnl: dt.reduce((s, t) => s + (netPnl(t) ?? 0), 0),
       totalR: dRs.length ? dRs.reduce((s, v) => s + v, 0) : null,
     };
   }).sort((a, b) => a.date.localeCompare(b.date));
@@ -127,7 +130,7 @@ async function computeAnalyticsCache(): Promise<CachedAnalytics> {
       trades: st.length,
       wins: sWins.length,
       winRate: st.length > 0 ? sWins.length / st.length : null,
-      totalPnl: st.reduce((s, t) => s + (t.profitLoss ?? 0), 0),
+      totalPnl: st.reduce((s, t) => s + (netPnl(t) ?? 0), 0),
       avgR: sRs.length ? sRs.reduce((s, v) => s + v, 0) / sRs.length : null,
     };
   }).sort((a, b) => b.trades - a.trades);
@@ -146,7 +149,7 @@ async function computeAnalyticsCache(): Promise<CachedAnalytics> {
       trades: st.length,
       wins: sWins.length,
       winRate: st.length > 0 ? sWins.length / st.length : null,
-      totalPnl: st.reduce((s, t) => s + (t.profitLoss ?? 0), 0),
+      totalPnl: st.reduce((s, t) => s + (netPnl(t) ?? 0), 0),
     };
   });
 

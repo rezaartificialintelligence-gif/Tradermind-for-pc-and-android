@@ -6,7 +6,7 @@ import { Badge } from "../components/ui/badge";
 import { Input } from "../components/ui/input";
 import { Alert, AlertDescription } from "../components/ui/alert";
 import {
-  Download, Upload, AlertTriangle, CheckCircle2, Clock,
+  Download, Upload, AlertTriangle, CheckCircle2, Clock, FileText,
   FileArchive, RefreshCcw, Trash2, ChevronDown, ChevronUp,
   ShieldCheck, Layers, XCircle, KeyRound, Eye, EyeOff, Lock, AlertCircle
 } from "lucide-react";
@@ -77,6 +77,13 @@ export default function BackupRestore() {
   const [storageUsed, setStorageUsed] = useState<number | null>(null);
   const [storageQuota, setStorageQuota] = useState<number | null>(null);
 
+  // ── هشدار نبودن پشتیبان اخیر (بیش از ۷ روز از آخرین پشتیبان یا هیچ‌وقت پشتیبان‌گیری نشده)
+  const lastBackupIso = localStorage.getItem('tradermind-last-backup');
+  const lastBackupDaysAgo = lastBackupIso
+    ? Math.floor((Date.now() - new Date(lastBackupIso).getTime()) / (1000 * 60 * 60 * 24))
+    : null;
+  const isBackupStale = lastBackupDaysAgo === null || lastBackupDaysAgo >= 7;
+
   useEffect(() => {
     (async () => {
       try {
@@ -117,6 +124,7 @@ export default function BackupRestore() {
 
   // ── Excel Export state
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportingWord, setExportingWord] = useState(false);
 
   const handleExcelExport = async () => {
     setExportingExcel(true);
@@ -127,6 +135,18 @@ export default function BackupRestore() {
       toast.error('خطا در ساخت فایل Excel. لطفاً دوباره تلاش کنید.');
     } finally {
       setExportingExcel(false);
+    }
+  };
+
+  const handleWordExport = async () => {
+    setExportingWord(true);
+    try {
+      await backupService.exportToWord();
+      toast.success('گزارش Word با جدول معاملات و تصاویر ساخته شد');
+    } catch {
+      toast.error('خطا در ساخت گزارش Word. لطفاً دوباره تلاش کنید.');
+    } finally {
+      setExportingWord(false);
     }
   };
 
@@ -304,7 +324,7 @@ export default function BackupRestore() {
       )}
 
       {/* ──── ایجاد نسخه پشتیبان ──── */}
-      <Card>
+      <Card className={isBackupStale ? 'border-amber-500/40' : ''}>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Download className="w-5 h-5 text-primary" />
@@ -314,7 +334,17 @@ export default function BackupRestore() {
             تمام اطلاعات برنامه (استراتژی‌ها، معاملات، ژورنال و تنظیمات) را در یک فایل ZIP ذخیره کنید.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          {isBackupStale && (
+            <Alert className="border-amber-500/40 bg-amber-500/10">
+              <AlertTriangle className="w-4 h-4 text-amber-500" />
+              <AlertDescription className="text-amber-600 dark:text-amber-400">
+                {lastBackupDaysAgo === null
+                  ? 'هنوز هیچ نسخهٔ پشتیبانی تهیه نکرده‌اید — برای جلوگیری از از دست رفتن اطلاعات معاملات، همین حالا یک نسخه پشتیبان بگیرید.'
+                  : `${lastBackupDaysAgo} روز از آخرین نسخهٔ پشتیبان شما گذشته — پیشنهاد می‌شود یک نسخهٔ جدید تهیه کنید.`}
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/20">
             <div>
               <p className="font-medium">دانلود فایل پشتیبان</p>
@@ -342,34 +372,47 @@ export default function BackupRestore() {
         </CardContent>
       </Card>
 
-       {/* ──── خروجی سازگار با Excel ──── */}
+       {/* ──── خروجی Excel و Word ──── */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Layers className="w-5 h-5 text-emerald-500" />
-             خروجی Excel / CSV
+             خروجی Excel و Word
           </CardTitle>
           <CardDescription>
-             فهرست کامل معاملات خود را به‌صورت CSV سازگار با Excel و Google Sheets دانلود کنید — شامل تمام جزئیات، نتایج و یادداشت‌ها.
+             Excel واقعی چندشیتی شامل جزئیات داده‌ها؛ و گزارش Word شامل جدول کامل معاملات و تصاویر هر معامله در صفحات بعدی.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/20">
+           <div className="flex flex-col gap-4 p-4 border rounded-lg bg-muted/20 sm:flex-row sm:items-center sm:justify-between">
             <div>
-               <p className="font-medium">دانلود فایل CSV</p>
-               <p className="text-sm text-muted-foreground">قابل بازکردن در Excel یا Google Sheets</p>
+                <p className="font-medium">گزارش‌گیری از معاملات</p>
+                <p className="text-sm text-muted-foreground">هر دو فایل روی همین دستگاه ساخته و دانلود می‌شوند.</p>
             </div>
-            <Button
-              onClick={handleExcelExport}
-              disabled={exportingExcel}
-              variant="outline"
-              className="flex items-center gap-2 shrink-0 border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10"
-            >
-              {exportingExcel
-                ? <><RefreshCcw className="w-4 h-4 animate-spin" /> در حال ساخت...</>
-                 : <><Download className="w-4 h-4" /> دانلود CSV</>
-              }
-            </Button>
+             <div className="flex flex-wrap gap-2 shrink-0">
+               <Button
+                 onClick={handleExcelExport}
+                 disabled={exportingExcel || exportingWord}
+                 variant="outline"
+                 className="flex items-center gap-2 border-emerald-500/40 text-emerald-500 hover:bg-emerald-500/10"
+               >
+                 {exportingExcel
+                   ? <><RefreshCcw className="w-4 h-4 animate-spin" /> در حال ساخت...</>
+                   : <><Download className="w-4 h-4" /> Excel (.xlsx)</>
+                 }
+               </Button>
+               <Button
+                 onClick={handleWordExport}
+                 disabled={exportingExcel || exportingWord}
+                 variant="outline"
+                 className="flex items-center gap-2 border-blue-500/40 text-blue-500 hover:bg-blue-500/10"
+               >
+                 {exportingWord
+                   ? <><RefreshCcw className="w-4 h-4 animate-spin" /> در حال ساخت...</>
+                   : <><FileText className="w-4 h-4" /> Word (.docx)</>
+                 }
+               </Button>
+             </div>
           </div>
         </CardContent>
       </Card>

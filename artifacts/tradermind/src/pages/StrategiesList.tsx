@@ -4,7 +4,7 @@ import { strategyService } from "../services/strategyService";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Skeleton } from "../components/ui/skeleton";
-import { PlusCircle, MoreVertical, Edit, Trash, Copy, Power, PowerOff } from "lucide-react";
+import { PlusCircle, MoreVertical, Edit, Trash, Copy, Power, PowerOff, AlertCircle, RefreshCw } from "lucide-react";
 import { Strategy } from "../db/database";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { Badge } from "../components/ui/badge";
@@ -15,12 +15,16 @@ export default function StrategiesList() {
   const [, setLocation] = useLocation();
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const loadStrategies = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const data = await strategyService.getAllStrategies();
       setStrategies(data);
+    } catch {
+      setError('خطا در بارگذاری استراتژی‌ها. لطفاً دوباره تلاش کنید.');
     } finally {
       setLoading(false);
     }
@@ -36,6 +40,11 @@ export default function StrategiesList() {
         icon: null,
         colorTag: '#3b82f6',
         isActive: true,
+        strategyMode: 'standard',
+        higherTimeframes: '4H',
+        lowerTimeframes: '15M, 5M, 1M',
+        liquidityZones: '',
+        setupDefinitions: JSON.stringify([]),
       });
       toast.success('استراتژی ساخته شد');
       setLocation(`/strategies/${strat.id}`);
@@ -102,6 +111,18 @@ export default function StrategiesList() {
             <Skeleton key={i} className="h-48 w-full rounded-xl" />
           ))}
         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 p-12 text-center">
+        <AlertCircle className="h-10 w-10 text-destructive" />
+        <p className="text-muted-foreground">{error}</p>
+        <Button variant="outline" onClick={loadStrategies} className="gap-2">
+          <RefreshCw className="h-4 w-4" /> تلاش مجدد
+        </Button>
       </div>
     );
   }

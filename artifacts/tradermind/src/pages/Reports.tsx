@@ -23,6 +23,7 @@ import {
 } from "../services/analyticsService";
 import { useAppStore } from "../store/useAppStore";
 import { getTradingDateRange } from "../lib/tradingTime";
+import { useAccountFilter, AccountFilter } from "../components/AccountFilter";
 
 // ================================================================
 // رنگ‌های ثابت (سازگار با dark/light mode)
@@ -170,6 +171,7 @@ export default function Reports() {
   const [customFrom, setCustomFrom] = useState("");
   const [customTo,   setCustomTo]   = useState("");
   const [customApplied, setCustomApplied] = useState({ from: "", to: "" });
+  const { accounts, selectedAccountId, setSelectedAccountId, filterByAccount } = useAccountFilter();
 
   useEffect(() => {
     Promise.all([
@@ -184,7 +186,7 @@ export default function Reports() {
     });
   }, []);
 
-  // فیلتر بر اساس بازه زمانی
+  // فیلتر بر اساس حساب معاملاتی، سپس بازه زمانی
   const trades = useMemo(() => {
     let from: number, to: number;
     if (timeRange === "custom") {
@@ -194,8 +196,8 @@ export default function Reports() {
       const r = getDateRange(timeRange);
       from = r.from; to = r.to;
     }
-    return filterTradesByRange(allTrades, from, to);
-  }, [allTrades, timeRange, customApplied, tradingTimeMode, brokerUtcOffsetMinutes]);
+    return filterTradesByRange(filterByAccount(allTrades), from, to);
+  }, [allTrades, timeRange, customApplied, tradingTimeMode, brokerUtcOffsetMinutes, selectedAccountId]);
 
   const analytics: AnalyticsData = useMemo(
     () => computeAnalytics(trades, journals, strategies),
@@ -237,25 +239,28 @@ export default function Reports() {
         <p className="text-muted-foreground mt-1">{t.reports.subtitle}</p>
       </div>
 
-      {/* ===== فیلتر بازه زمانی ===== */}
+      {/* ===== فیلتر بازه زمانی و حساب معاملاتی ===== */}
       <Card>
         <CardContent className="p-4 space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-muted-foreground">{t.reports.timeRange}:</span>
-            {RANGE_OPTIONS.map(opt => (
-              <button
-                key={opt.key}
-                onClick={() => setTimeRange(opt.key)}
-                className={cn(
-                  "px-3.5 py-1.5 rounded-full text-sm border transition-all font-medium",
-                  timeRange === opt.key
-                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                    : "border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 flex-wrap justify-between">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium text-muted-foreground">{t.reports.timeRange}:</span>
+              {RANGE_OPTIONS.map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => setTimeRange(opt.key)}
+                  className={cn(
+                    "px-3.5 py-1.5 rounded-full text-sm border transition-all font-medium",
+                    timeRange === opt.key
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <AccountFilter accounts={accounts} selectedAccountId={selectedAccountId} onChange={setSelectedAccountId} />
           </div>
 
           {timeRange === "custom" && (

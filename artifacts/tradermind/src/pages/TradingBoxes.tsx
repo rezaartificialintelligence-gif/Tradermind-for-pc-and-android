@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { tradingBoxService } from '../services/tradingBoxService';
-import { TradingBox, db } from '../db/database';
+import { accountService } from '../services/accountService';
+import { TradingBox, Account } from '../db/database';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -17,6 +18,7 @@ const COLORS = ['#3b82f6', '#22c55e', '#f97316', '#a855f7', '#ec4899', '#14b8a6'
 
 const emptyForm = {
   name: '',
+  accountId: 'none',
   description: '',
   targetTradeCount: '',
   color: '#3b82f6',
@@ -27,6 +29,7 @@ const emptyForm = {
 export default function TradingBoxes() {
   const [, setLocation] = useLocation();
   const [boxes, setBoxes] = useState<TradingBox[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [tradeCounts, setTradeCounts] = useState<Record<string, number>>({});
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -35,8 +38,12 @@ export default function TradingBoxes() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const load = async () => {
-    const all = await tradingBoxService.getAll();
+    const [all, allAccounts] = await Promise.all([
+      tradingBoxService.getAll(),
+      accountService.getAll(),
+    ]);
     setBoxes(all);
+    setAccounts(allAccounts);
     const counts: Record<string, number> = {};
     await Promise.all(
       all.map(async b => {
@@ -58,6 +65,7 @@ export default function TradingBoxes() {
     setEditingId(box.id);
     setForm({
       name: box.name,
+      accountId: box.accountId || 'none',
       description: box.description ?? '',
       targetTradeCount: box.targetTradeCount?.toString() ?? '',
       color: box.color,
@@ -75,6 +83,7 @@ export default function TradingBoxes() {
     setSaving(true);
     const data = {
       name: form.name.trim(),
+      accountId: form.accountId === 'none' ? null : form.accountId,
       description: form.description.trim() || null,
       targetTradeCount: form.targetTradeCount ? parseInt(form.targetTradeCount) : null,
       color: form.color,
@@ -208,6 +217,23 @@ export default function TradingBoxes() {
             <div className="space-y-2">
               <Label>نام باکس *</Label>
               <Input placeholder="مثلاً باکس ۱ — آزمون استراتژی FVG" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>حساب مرتبط</Label>
+              <Select value={form.accountId} onValueChange={v => setForm(f => ({ ...f, accountId: v }))}>
+                <SelectTrigger><SelectValue placeholder="بدون حساب" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">بدون حساب</SelectItem>
+                  {accounts.map(account => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.name}{account.broker ? ` — ${account.broker}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {accounts.length === 0 && (
+                <p className="text-xs text-muted-foreground">برای اتصال، ابتدا یک حساب معاملاتی بسازید.</p>
+              )}
             </div>
             <div className="space-y-2">
               <Label>توضیح</Label>

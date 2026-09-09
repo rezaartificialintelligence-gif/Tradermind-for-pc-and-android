@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { accountService } from '../services/accountService';
-import { Account } from '../db/database';
+import { tradingBoxService } from '../services/tradingBoxService';
+import { Account, TradingBox } from '../db/database';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -23,17 +24,26 @@ const emptyForm = {
   color: '#3b82f6',
   isDefault: false,
   notes: '',
+  boxIds: [] as string[],
 };
 
 export default function Accounts() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [boxes, setBoxes] = useState<TradingBox[]>([]);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  const load = () => accountService.getAll().then(setAccounts);
+  const load = async () => {
+    const [nextAccounts, nextBoxes] = await Promise.all([
+      accountService.getAll(),
+      tradingBoxService.getAll(),
+    ]);
+    setAccounts(nextAccounts);
+    setBoxes(nextBoxes);
+  };
 
   useEffect(() => { load(); }, []);
 
@@ -54,6 +64,7 @@ export default function Accounts() {
       color: acc.color,
       isDefault: acc.isDefault,
       notes: acc.notes ?? '',
+      boxIds: boxes.filter(box => box.accountId === acc.id).map(box => box.id),
     });
     setDialogOpen(true);
   };
@@ -75,12 +86,24 @@ export default function Accounts() {
       notes: form.notes.trim() || null,
     };
     try {
+      let savedAccountId = editingId;
       if (editingId) {
         await accountService.update(editingId, data);
         toast.success('حساب به‌روز شد');
       } else {
-        await accountService.create(data);
+        const created = await accountService.create(data);
+        savedAccountId = created.id;
         toast.success('حساب جدید اضافه شد');
+      }
+      if (savedAccountId) {
+        const affectedBoxes = boxes.filter(box =>
+          box.accountId === savedAccountId || form.boxIds.includes(box.id)
+        );
+        await Promise.all(affectedBoxes.map(box =>
+          tradingBoxService.update(box.id, {
+            accountId: form.boxIds.includes(box.id) ? savedAccountId : null,
+          })
+        ));
       }
       await load();
       setDialogOpen(false);
@@ -90,6 +113,11 @@ export default function Accounts() {
   };
 
   const handleDelete = async (id: string) => {
+    await Promise.all(
+      boxes.filter(box => box.accountId === id).map(box =>
+        tradingBoxService.update(box.id, { accountId: null })
+      )
+    );
     await accountService.delete(id);
     toast.success('حساب حذف شد');
     await load();
@@ -143,6 +171,17 @@ export default function Accounts() {
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {boxes.filter(box => box.accountId === acc.id).map(box => (
+                    <span key={box.id} className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: box.color }} />
+                      {box.name}
+                    </span>
+                  ))}
+                  {boxes.every(box => box.accountId !== acc.id) && (
+                    <span className="text-xs text-muted-foreground">باکسی متصل نشده</span>
+                  )}
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
@@ -215,6 +254,39 @@ export default function Accounts() {
             <div className="space-y-2">
               <Label>یادداشت</Label>
               <Textarea placeholder="توضیحات اضافی…" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} className="min-h-[70px]" />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>باکس‌های این حساب</Label>
+                <span className="text-xs text-muted-foreground">چند انتخابی</span>
+              </div>
+              {boxes.length === 0 ? (
+                <p className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+                  هنوز باکسی ساخته نشده؛ بعداً هم می‌توانید از صفحهٔ باکس‌ها آن را به این حساب متصل کنید.
+                </p>
+              ) : (
+                <div className="max-h-36 space-y-1 overflow-y-auto rounded-lg border p-2">
+                  {boxes.map(box => (
+                    <label key={box.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted/50">
+                      <input
+                        type="checkbox"
+                        checked={form.boxIds.includes(box.id)}
+                        onChange={event => setForm(current => ({
+                          ...current,
+                          boxIds: event.target.checked
+                            ? [...current.boxIds, box.id]
+                            : current.boxIds.filter(id => id !== box.id),
+                        }))}
+                      />
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: box.color }} />
+                      <span className="truncate">{box.name}</span>
+                      {box.accountId && box.accountId !== editingId && (
+                        <span className="mr-auto text-[10px] text-amber-500">متصل به حساب دیگر</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
             <label className="flex items-center gap-2 cursor-pointer select-none">
               <input type="checkbox" className="rounded" checked={form.isDefault} onChange={e => setForm(f => ({ ...f, isDefault: e.target.checked }))} />
