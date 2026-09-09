@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+env:
+  PORT: 23583
+  BASE_PATH: /
+
 concurrency:
   group: tradermind-build-${{ github.ref }}
   cancel-in-progress: true
