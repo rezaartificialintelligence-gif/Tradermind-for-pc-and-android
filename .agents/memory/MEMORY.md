@@ -1,1 +1,2 @@
 - [TraderMind archive setup](tradermind-archive-setup.md) — نسخه‌های آرشیوی TraderMind به نصب وابستگی‌های خود بسته و گاهی حذف افزونه‌های اختیاری build نیاز دارند.
+- [GitHub Actions builds](github-actions-builds.md) — نسخه pnpm باید با lockfile هماهنگ باشد و runtimeهای Electron باید داخل مخزن باشند.
