@@ -1,7 +1,6 @@
 kind = "web"
 previewPath = "/"
 title = "TraderMind OS"
-description = "ژورنال معاملاتی آفلاین برای ثبت معاملات، تحلیل عملکرد، مرور تصمیم‌ها و ساختن عادت‌های معاملاتی بهتر؛ با تجربه‌ای حرفه‌ای و واکنش‌گرا برای دسکتاپ و موبایل."
 version = "1.0.0"
 id = "artifacts/tradermind"
 router = "path"

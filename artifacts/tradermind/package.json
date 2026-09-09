@@ -21,7 +21,6 @@
     "electron:build:win": "pnpm run electron:build:vite && pnpm run electron:compile && electron-builder --win --config electron-builder.json --publish never",
     "electron:build:mac": "pnpm run electron:build:vite && pnpm run electron:compile && electron-builder --mac --config electron-builder.json",
     "android:build:vite": "vite build --config vite.capacitor.config.ts",
-    "android:add": "cap add android",
     "android:sync": "pnpm run android:build:vite && cap sync android",
     "android:open": "cap open android"
   },

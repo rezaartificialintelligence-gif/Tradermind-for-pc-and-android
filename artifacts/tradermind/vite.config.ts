@@ -2,19 +2,31 @@ import path from 'path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
-// Replit injects PORT/BASE_PATH for the preview workflow. Defaults keep
-// standalone production and CI builds deterministic.
-const rawPort = process.env.PORT ?? '5173';
+const rawPort = process.env.PORT;
+
+if (!rawPort) {
+  throw new Error(
+    'PORT environment variable is required but was not provided.',
+  );
+}
+
 const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const basePath = process.env.BASE_PATH ?? '/';
+const basePath = process.env.BASE_PATH;
+
+if (!basePath) {
+  throw new Error(
+    'BASE_PATH environment variable is required but was not provided.',
+  );
+}
 
 export default defineConfig({
   base: basePath,
@@ -22,6 +34,31 @@ export default defineConfig({
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
+    VitePWA({
+      // Wait for a clean navigation before activating a new chunk set. This
+      // avoids mixing a new index.html with old lazy chunks on mobile/PWA.
+      registerType: 'prompt',
+      injectRegister: 'auto',
+      manifest: false, // از public/manifest.json استفاده می‌شود
+      workbox: {
+        cleanupOutdatedCaches: true,
+        skipWaiting: false,
+        clientsClaim: false,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: { cacheName: 'google-fonts-cache', expiration: { maxAgeSeconds: 60 * 60 * 24 * 365 } },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: { cacheName: 'gstatic-fonts-cache', expiration: { maxAgeSeconds: 60 * 60 * 24 * 365 } },
+          },
+        ],
+      },
+    }),
     ...(process.env.NODE_ENV !== 'production' &&
     process.env.REPL_ID !== undefined
       ? [

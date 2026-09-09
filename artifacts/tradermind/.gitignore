@@ -1,0 +1,18 @@
+# Build outputs
+dist/
+dist-electron/
+electron/dist/
+
+# Capacitor - Android project (generated in CI via `cap add android`)
+# برای ویرایش manifest یا gradle: این خط را حذف و android/ را commit کنید
+android/
+
+# iOS (اگر در آینده اضافه شود)
+ios/
+
+# Deps
+node_modules/
+
+# Misc
+.DS_Store
+*.local

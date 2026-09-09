@@ -1,17 +1,7 @@
-import { app, BrowserWindow, Notification, ipcMain } from 'electron';
-import path from 'node:path';
+import { app, BrowserWindow, shell, Menu, session, ipcMain, Notification } from 'electron';
+import path from 'path';
 
-interface ReminderPayload {
-  id: string;
-  title: string;
-  body: string;
-  scheduledAt: number;
-}
-
-const MAX_TIMEOUT = 2_147_483_647;
-
-let mainWindow: BrowserWindow | null = null;
-let allowClose = false;
+const isDev = !app.isPackaged;
 const reminderTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function cancelReminder(id: string): void {
@@ -20,85 +10,110 @@ function cancelReminder(id: string): void {
   reminderTimers.delete(id);
 }
 
-function showReminder(reminder: ReminderPayload): void {
-  reminderTimers.delete(reminder.id);
-  if (Notification.isSupported()) {
-    new Notification({
-      title: reminder.title,
-      body: reminder.body || 'یادآور TraderMind',
-    }).show();
-  }
-}
-
-function scheduleReminder(reminder: ReminderPayload): boolean {
+function scheduleReminder(reminder: { id: string; title: string; body: string; scheduledAt: number }): boolean {
   cancelReminder(reminder.id);
-  if (reminder.scheduledAt <= Date.now()) return false;
+  const delay = reminder.scheduledAt - Date.now();
+  if (delay <= 0) return false;
 
-  const scheduleNextChunk = (): void => {
+  const scheduleNext = () => {
     const remaining = reminder.scheduledAt - Date.now();
     if (remaining <= 0) {
-      showReminder(reminder);
+      reminderTimers.delete(reminder.id);
+      if (Notification.isSupported()) {
+        new Notification({
+          title: reminder.title,
+          body: reminder.body || 'یادآور TraderMind',
+          silent: false,
+        }).show();
+      }
       return;
     }
-
-    const timer = setTimeout(scheduleNextChunk, Math.min(remaining, MAX_TIMEOUT));
-    reminderTimers.set(reminder.id, timer);
+    reminderTimers.set(reminder.id, setTimeout(scheduleNext, Math.min(remaining, 2_147_483_647)));
   };
 
-  scheduleNextChunk();
+  scheduleNext();
   return true;
 }
 
-function createWindow(): void {
-  mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 960,
-    minWidth: 1024,
-    minHeight: 680,
-    backgroundColor: '#0b141b',
-    show: false,
-    autoHideMenuBar: true,
+function createWindow() {
+  const win = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 960,
+    minHeight: 640,
     webPreferences: {
-      contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true,
+      contextIsolation: true,
       preload: path.join(__dirname, 'preload.js'),
+      webSecurity: false, // needed for file:// IndexedDB access
     },
+    icon: path.join(__dirname, '../../public/icon.png'),
+    title: 'TraderMind OS',
+    backgroundColor: '#0f1117',
+    show: false,
   });
 
-  mainWindow.once('ready-to-show', () => mainWindow?.show());
-  mainWindow.loadFile(path.join(__dirname, '../../dist/public/index.html'));
-
-  mainWindow.on('close', (event) => {
+  let allowClose = false;
+  win.on('close', (event) => {
     if (allowClose) return;
     event.preventDefault();
-    mainWindow?.webContents.send('close-requested');
+    win.webContents.send('close-requested');
+  });
+  ipcMain.removeAllListeners('close-confirmed');
+  ipcMain.removeAllListeners('close-cancelled');
+  ipcMain.once('close-confirmed', () => {
+    allowClose = true;
+    win.close();
+  });
+  ipcMain.on('close-cancelled', () => undefined);
+
+  // بارگذاری برنامه از dist
+  // __dirname در dev = electron/dist/ و در prod = app.asar/electron/dist/
+  // دو سطح بالاتر = ریشه پروژه یا ریشه asar
+  const indexPath = path.join(__dirname, '../../dist/public/index.html');
+
+  win.loadFile(indexPath).catch((err) => {
+    console.error('loadFile failed:', indexPath, err);
   });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
+  // نمایش پنجره پس از آماده شدن (بدون flash سفید)
+  win.once('ready-to-show', () => {
+    win.show();
   });
+
+  win.webContents.on('did-fail-load', (_e, errorCode, errorDescription, validatedURL) => {
+    console.error('LOAD FAILED:', errorCode, errorDescription, validatedURL);
+  });
+
+  win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    console.log('[renderer]', level, message, `(${sourceId}:${line})`);
+  });
+
+  // باز کردن لینک‌های خارجی در مرورگر سیستم
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
+
+  return win;
 }
 
-ipcMain.on('confirm-close', () => {
-  allowClose = true;
-  mainWindow?.close();
-});
-
-ipcMain.on('cancel-close', () => {
-  // The renderer keeps ownership of the close dialog state.
-});
-
-ipcMain.handle('schedule-reminder', (_event, reminder: ReminderPayload) => (
-  scheduleReminder(reminder)
-));
-
-ipcMain.handle('cancel-reminder', (_event, id: string) => {
-  cancelReminder(id);
-});
+// منو را مخفی کن (برنامه SPA است)
+Menu.setApplicationMenu(null);
 
 app.whenReady().then(() => {
+  ipcMain.handle('schedule-reminder', (_event, reminder) => scheduleReminder(reminder));
+  ipcMain.handle('cancel-reminder', (_event, id: string) => {
+    cancelReminder(id);
+  });
+  // Web Speech در Electron برای شروع ضبط به مجوز media نیاز دارد.
+  // فقط میکروفون را اجازه می‌دهیم؛ دسترسی دوربین یا مجوزهای دیگر باز نمی‌شود.
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === 'media');
+  });
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => permission === 'media');
   createWindow();
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -106,9 +121,4 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
-});
-
-app.on('before-quit', () => {
-  allowClose = true;
-  for (const id of reminderTimers.keys()) cancelReminder(id);
 });
