@@ -51,9 +51,13 @@ export default function VisualFeatureEditor({ features, userAddedFeatures, onCha
   const [showAddPanel, setShowAddPanel] = useState(false);
   const [addCategory, setAddCategory] = useState<VisualFeatureCategory>('price-action');
   const [addValue, setAddValue] = useState('');
+  const [addFreeText, setAddFreeText] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editNote, setEditNote] = useState('');
   const [editCorrectedValue, setEditCorrectedValue] = useState('');
+  // ویرایش متن یک ویژگی اضافه‌شده توسط کاربر (زیر تصویر)
+  const [editingUserFeatureId, setEditingUserFeatureId] = useState<string | null>(null);
+  const [editUserFeatureText, setEditUserFeatureText] = useState('');
 
   const updateFeature = (id: string, patch: Partial<VisualFeature>) => {
     const updated = features.map(f => f.id === id ? { ...f, ...patch } : f);
@@ -62,16 +66,20 @@ export default function VisualFeatureEditor({ features, userAddedFeatures, onCha
 
   const removeUserAdded = (id: string) => {
     onChange(features, userAddedFeatures.filter(f => f.id !== id));
+    if (editingUserFeatureId === id) setEditingUserFeatureId(null);
   };
 
   const addUserFeature = () => {
-    if (!addValue) return;
-    const label = FEATURE_LABELS[addValue] ?? addValue;
+    const freeText = addFreeText.trim();
+    if (!addValue && !freeText) return;
+    // اگر متن آزاد وارد شده باشد، همان به‌عنوان برچسب/مقدار ویژگی ثبت می‌شود؛
+    // در غیر این‌صورت مقدار انتخاب‌شده از لیست استفاده می‌شود.
+    const label = freeText || (FEATURE_LABELS[addValue] ?? addValue);
     const newFeature: VisualFeature = {
       id: uid(),
       category: addCategory,
       label,
-      value: addValue,
+      value: addValue || freeText,
       confidence: 'high',
       notes: null,
       source: 'user',
@@ -81,7 +89,24 @@ export default function VisualFeatureEditor({ features, userAddedFeatures, onCha
     };
     onChange(features, [...userAddedFeatures, newFeature]);
     setAddValue('');
+    setAddFreeText('');
     setShowAddPanel(false);
+  };
+
+  const startEditUserFeature = (f: VisualFeature) => {
+    setEditingUserFeatureId(f.id);
+    setEditUserFeatureText(f.label);
+  };
+
+  const saveEditUserFeature = () => {
+    if (!editingUserFeatureId) return;
+    const trimmed = editUserFeatureText.trim();
+    if (trimmed) {
+      onChange(features, userAddedFeatures.map(f =>
+        f.id === editingUserFeatureId ? { ...f, label: trimmed, value: trimmed } : f,
+      ));
+    }
+    setEditingUserFeatureId(null);
   };
 
   const startEdit = (f: VisualFeature) => {
@@ -244,16 +269,40 @@ export default function VisualFeatureEditor({ features, userAddedFeatures, onCha
           <p className="text-xs text-muted-foreground">ویژگی‌های اضافه‌شده توسط کاربر:</p>
           <div className="flex flex-wrap gap-2">
             {userAddedFeatures.map(f => (
-              <span
-                key={f.id}
-                className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-blue-500/15
-                           border border-blue-500/30 text-blue-300 rounded-full"
-              >
-                {f.label}
-                <button onClick={() => removeUserAdded(f.id)} className="hover:text-red-400 transition-colors">
-                  <X className="w-3 h-3" />
-                </button>
-              </span>
+              editingUserFeatureId === f.id ? (
+                <span key={f.id} className="inline-flex items-center gap-1">
+                  <Input
+                    autoFocus
+                    value={editUserFeatureText}
+                    onChange={e => setEditUserFeatureText(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') saveEditUserFeature();
+                      if (e.key === 'Escape') setEditingUserFeatureId(null);
+                    }}
+                    className="h-7 text-xs w-40"
+                  />
+                  <Button size="sm" className="h-7 text-xs px-2" onClick={saveEditUserFeature}>ذخیره</Button>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs px-2" onClick={() => setEditingUserFeatureId(null)}>لغو</Button>
+                </span>
+              ) : (
+                <span
+                  key={f.id}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-blue-500/15
+                             border border-blue-500/30 text-blue-300 rounded-full"
+                >
+                  <button
+                    type="button"
+                    onClick={() => startEditUserFeature(f)}
+                    className="hover:underline"
+                    title="ویرایش متن"
+                  >
+                    {f.label}
+                  </button>
+                  <button onClick={() => removeUserAdded(f.id)} className="hover:text-red-400 transition-colors">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )
             ))}
           </div>
         </div>
@@ -287,7 +336,7 @@ export default function VisualFeatureEditor({ features, userAddedFeatures, onCha
                 </SelectContent>
               </Select>
 
-              <Select value={addValue} onValueChange={setAddValue}>
+              <Select value={addValue} onValueChange={v => { setAddValue(v); setAddFreeText(''); }}>
                 <SelectTrigger className="h-8 text-xs flex-1">
                   <SelectValue placeholder="ویژگی" />
                 </SelectTrigger>
@@ -301,7 +350,20 @@ export default function VisualFeatureEditor({ features, userAddedFeatures, onCha
               </Select>
             </div>
 
-            <Button size="sm" className="h-7 text-xs w-full" onClick={addUserFeature} disabled={!addValue}>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px bg-white/10" />
+              <span className="text-[11px] text-muted-foreground">یا</span>
+              <div className="flex-1 h-px bg-white/10" />
+            </div>
+
+            <Input
+              value={addFreeText}
+              onChange={e => { setAddFreeText(e.target.value); if (e.target.value) setAddValue(''); }}
+              placeholder="توضیح دلخواه خودتان را بنویسید…"
+              className="h-8 text-xs"
+            />
+
+            <Button size="sm" className="h-7 text-xs w-full" onClick={addUserFeature} disabled={!addValue && !addFreeText.trim()}>
               افزودن
             </Button>
           </div>
