@@ -67,6 +67,10 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
   const [startPoint, setStartPoint] = useState<AnnotationPoint | null>(null);
   const [showAnnotations, setShowAnnotations] = useState(true);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // نشانه‌ای که تازه ثبت شده یا برای ویرایش انتخاب شده — باکس متن برچسب برایش باز است
+  const [editingAnnotation, setEditingAnnotation] = useState<{ id: string; label: string; isNew: boolean } | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragPointIndex, setDragPointIndex] = useState<number>(0);
 
   // Load image onto canvas background
   useEffect(() => {
@@ -89,6 +93,23 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
       x: (e.clientX - rect.left) / rect.width,
       y: (e.clientY - rect.top) / rect.height,
     };
+  };
+
+  // پیدا کردن نزدیک‌ترین نقطهٔ یک نشانهٔ موجود به محل کلیک — برای جابجایی یا انتخاب برای ویرایش
+  const HIT_RADIUS = 0.025; // نسبت به عرض/ارتفاع نرمال‌شدهٔ تصویر (۰ تا ۱)
+  const hitTestAnnotation = (pt: AnnotationPoint): { id: string; pointIndex: number } | null => {
+    for (let i = annotations.length - 1; i >= 0; i--) {
+      const ann = annotations[i];
+      for (let pIdx = 0; pIdx < ann.points.length; pIdx++) {
+        const p = ann.points[pIdx];
+        const dx = p.x - pt.x;
+        const dy = p.y - pt.y;
+        if (Math.sqrt(dx * dx + dy * dy) <= HIT_RADIUS) {
+          return { id: ann.id, pointIndex: pIdx };
+        }
+      }
+    }
+    return null;
   };
 
   const renderCanvas = useCallback(() => {
@@ -175,10 +196,19 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
   const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (readOnly) return;
     const pt = getRelativePoint(e);
+
+    // اگر روی نقطهٔ یک نشانهٔ موجود کلیک شد، حالت جابجایی (drag) شروع می‌شود
+    const hit = hitTestAnnotation(pt);
+    if (hit) {
+      setDraggingId(hit.id);
+      setDragPointIndex(hit.pointIndex);
+      return;
+    }
+
     const mode = MODE_FOR_TYPE[selectedType];
 
     if (mode === 'point') {
-      // Add immediately on click
+      // نشانه با برچسب موقت ثبت می‌شود؛ بلافاصله باکس ویرایش برچسب باز می‌شود
       const ann: ScreenshotAnnotation = {
         id: uid(),
         type: selectedType,
@@ -188,13 +218,30 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
         createdAt: Date.now(),
       };
       onChange([...annotations, ann]);
+      setEditingAnnotation({ id: ann.id, label: ANNOTATION_LABELS[selectedType], isNew: true });
     } else {
       setIsDrawing(true);
       setStartPoint(pt);
     }
   };
 
+  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (readOnly || !draggingId) return;
+    const pt = getRelativePoint(e);
+    const updated = annotations.map(ann => {
+      if (ann.id !== draggingId) return ann;
+      const newPoints = ann.points.slice();
+      newPoints[dragPointIndex] = pt;
+      return { ...ann, points: newPoints };
+    });
+    onChange(updated);
+  };
+
   const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (draggingId) {
+      setDraggingId(null);
+      return;
+    }
     if (!isDrawing || !startPoint || readOnly) return;
     const pt = getRelativePoint(e);
     const mode = MODE_FOR_TYPE[selectedType];
@@ -209,6 +256,7 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
         createdAt: Date.now(),
       };
       onChange([...annotations, ann]);
+      setEditingAnnotation({ id: ann.id, label: ANNOTATION_LABELS[selectedType], isNew: true });
     }
 
     setIsDrawing(false);
@@ -230,6 +278,14 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
     e.preventDefault(); // prevent scroll while drawing
     if (readOnly) return;
     const pt = getTouchPoint(e);
+
+    const hit = hitTestAnnotation(pt);
+    if (hit) {
+      setDraggingId(hit.id);
+      setDragPointIndex(hit.pointIndex);
+      return;
+    }
+
     const mode = MODE_FOR_TYPE[selectedType];
 
     if (mode === 'point') {
@@ -242,14 +298,32 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
         createdAt: Date.now(),
       };
       onChange([...annotations, ann]);
+      setEditingAnnotation({ id: ann.id, label: ANNOTATION_LABELS[selectedType], isNew: true });
     } else {
       setIsDrawing(true);
       setStartPoint(pt);
     }
   };
 
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (readOnly || !draggingId) return;
+    e.preventDefault();
+    const pt = getTouchPoint(e);
+    const updated = annotations.map(ann => {
+      if (ann.id !== draggingId) return ann;
+      const newPoints = ann.points.slice();
+      newPoints[dragPointIndex] = pt;
+      return { ...ann, points: newPoints };
+    });
+    onChange(updated);
+  };
+
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault();
+    if (draggingId) {
+      setDraggingId(null);
+      return;
+    }
     if (!isDrawing || !startPoint || readOnly) return;
     const pt = getTouchPoint(e);
     const mode = MODE_FOR_TYPE[selectedType];
@@ -264,6 +338,7 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
         createdAt: Date.now(),
       };
       onChange([...annotations, ann]);
+      setEditingAnnotation({ id: ann.id, label: ANNOTATION_LABELS[selectedType], isNew: true });
     }
 
     setIsDrawing(false);
@@ -272,10 +347,31 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
 
   const removeAnnotation = (id: string) => {
     onChange(annotations.filter(a => a.id !== id));
+    if (editingAnnotation?.id === id) setEditingAnnotation(null);
   };
 
   const clearAll = () => {
     onChange([]);
+    setEditingAnnotation(null);
+  };
+
+  const startEditLabel = (ann: ScreenshotAnnotation) => {
+    if (readOnly) return;
+    setEditingAnnotation({ id: ann.id, label: ann.label, isNew: false });
+  };
+
+  const saveEditingLabel = () => {
+    if (!editingAnnotation) return;
+    const trimmed = editingAnnotation.label.trim();
+    onChange(annotations.map(a => a.id === editingAnnotation.id
+      ? { ...a, label: trimmed || ANNOTATION_LABELS[a.type] }
+      : a));
+    setEditingAnnotation(null);
+  };
+
+  const cancelEditingLabel = () => {
+    // اگر نشانه تازه ساخته شده و کاربر برچسب را لغو کرد، برچسب پیش‌فرض نوع همان می‌ماند
+    setEditingAnnotation(null);
   };
 
   return (
@@ -325,16 +421,37 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
           height={600}
           className="w-full h-auto cursor-crosshair"
           onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          style={{ cursor: readOnly ? 'default' : 'crosshair', touchAction: 'none' }}
+          style={{ cursor: readOnly ? 'default' : draggingId ? 'grabbing' : 'crosshair', touchAction: 'none' }}
         />
-        {!readOnly && (
+        {!readOnly && !editingAnnotation && (
           <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">
             {MODE_FOR_TYPE[selectedType] === 'point'
-              ? 'کلیک کنید'
+              ? 'کلیک کنید — یا یک نشانهٔ موجود را بکشید تا جابجا شود'
               : 'بکشید تا خط/ناحیه ایجاد شود'}
+          </div>
+        )}
+
+        {/* باکس ویرایش متن برچسب — بعد از قرار دادن نشانه یا با کلیک روی نشانهٔ موجود باز می‌شود */}
+        {!readOnly && editingAnnotation && (
+          <div className="absolute inset-x-2 bottom-2 flex items-center gap-2 bg-black/80 backdrop-blur-sm rounded-lg p-2">
+            <input
+              autoFocus
+              value={editingAnnotation.label}
+              onChange={e => setEditingAnnotation(prev => prev ? { ...prev, label: e.target.value } : prev)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') saveEditingLabel();
+                if (e.key === 'Escape') cancelEditingLabel();
+              }}
+              placeholder="متن دلخواه برای این نشانه…"
+              className="flex-1 h-8 rounded-md border border-white/20 bg-white/10 px-2 text-xs text-white placeholder:text-white/50 focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+            <Button size="sm" className="h-8 text-xs" onClick={saveEditingLabel}>ذخیره</Button>
+            <Button size="sm" variant="ghost" className="h-8 text-xs text-white" onClick={cancelEditingLabel}>لغو</Button>
           </div>
         )}
       </div>
@@ -350,13 +467,20 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
               onMouseEnter={() => setHoveredId(ann.id)}
               onMouseLeave={() => setHoveredId(null)}
             >
-              <span className="flex items-center gap-2">
+              <button
+                type="button"
+                className="flex items-center gap-2 flex-1 text-right disabled:cursor-default"
+                onClick={() => startEditLabel(ann)}
+                disabled={readOnly}
+                title={readOnly ? undefined : 'برای ویرایش متن برچسب کلیک کنید'}
+              >
                 <span
                   className="w-2 h-2 rounded-full flex-shrink-0"
                   style={{ background: ann.color }}
                 />
                 {ann.label}
-              </span>
+                {!readOnly && <Edit2 className="w-2.5 h-2.5 text-muted-foreground/60" />}
+              </button>
               {!readOnly && (
                 <button
                   onClick={() => removeAnnotation(ann.id)}
@@ -368,6 +492,11 @@ function AnnotationCanvas({ imageDataUrl, annotations, onChange, readOnly = fals
             </div>
           ))}
         </div>
+      )}
+      {!readOnly && annotations.length > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          نکته: هر نشانه روی تصویر را می‌توانید بکشید تا جابجا شود، یا از لیست بالا روی آن کلیک کنید تا متنش را ویرایش کنید.
+        </p>
       )}
     </div>
   );
