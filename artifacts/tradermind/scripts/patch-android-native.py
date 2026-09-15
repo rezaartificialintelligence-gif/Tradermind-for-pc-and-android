@@ -117,14 +117,29 @@ def patch_release_signing() -> None:
     if android_count != 1:
         raise RuntimeError("Could not find 'android {' block to insert signingConfigs")
 
-    content, release_count = re.subn(
-        r"(?m)^(\s*release \{\n)",
-        r"\1            signingConfig signingConfigs.release\n",
-        content,
-        count=1,
+    # نکته: بعد از درج بلوک signingConfigs بالا، خود فایل دیگر شامل یک
+    # 'release {' اضافه (داخل signingConfigs) هم هست. برای اینکه signingConfig
+    # را قطعاً به buildTypes.release متصل کنیم نه به signingConfigs.release،
+    # ابتدا محدوده‌ی 'buildTypes { ... }' را پیدا می‌کنیم و فقط داخل همان
+    # محدوده به دنبال اولین 'release {' می‌گردیم.
+    build_types_match = re.search(r"(?m)^\s*buildTypes \{\n", content)
+    if not build_types_match:
+        raise RuntimeError("Could not find 'buildTypes {' block")
+
+    build_types_start = build_types_match.end()
+    release_in_build_types = re.search(
+        r"(?m)^(\s*release \{\n)", content[build_types_start:]
     )
-    if release_count != 1:
-        raise RuntimeError("Could not find 'release {' buildType block to attach signingConfig")
+    if not release_in_build_types:
+        raise RuntimeError("Could not find 'release {' inside buildTypes block")
+
+    insert_at = build_types_start + release_in_build_types.end()
+    indent = re.match(r"\s*", release_in_build_types.group(1)).group()
+    content = (
+        content[:insert_at]
+        + indent + "    signingConfig signingConfigs.release\n"
+        + content[insert_at:]
+    )
 
     BUILD_GRADLE.write_text(content, encoding="utf-8")
 
