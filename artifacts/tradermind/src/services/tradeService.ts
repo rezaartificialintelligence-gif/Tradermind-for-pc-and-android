@@ -1,4 +1,4 @@
-import { db, Trade, defaultPostTradeReview } from '../db/database';
+import { db, Trade, defaultPostTradeReview, ChartScreenshot } from '../db/database';
 import { isWin, isClosed } from '../lib/tradeHelpers';
 import { strategyService } from './strategyService';
 import { analysisService } from './analysisService';
@@ -6,9 +6,92 @@ import { tradeVersionService, tradeEventService } from './tradeEventService';
 import { detectTradingSession, getTradeNetPnl } from '../lib/tradeClassification';
 import { getTrades as getRepositoryTrades } from '../core/repositories/tradeRepository';
 import { getTradingDateRange } from '../lib/tradingTime';
+import type { TradeScreenshot } from '../types/screenshot';
 
 const defaultReview = JSON.stringify({ didWell: '', didWrong: '', learned: '', wouldTakeAgain: null, validSetup: null });
 const defaultPostTradeReviewStr = JSON.stringify(defaultPostTradeReview);
+
+/**
+ * اسکرین‌شات‌های یک معامله را در کتابخانه‌ی هوش اسکرین‌شات (chartScreenshots)
+ * هم‌گام می‌کند تا در بخش «هوش اسکرین‌شات» هم قابل مشاهده و جستجو باشند.
+ * برای هر اسکرین‌شات معامله که قبلاً در کتابخانه ثبت نشده، یک رکورد ChartScreenshot
+ * با همان id ساخته می‌شود (put — idempotent است، صدا زدن مکرر مشکلی ایجاد نمی‌کند).
+ */
+async function syncTradeScreenshotsToLibrary(trade: Trade): Promise<void> {
+  let screenshots: TradeScreenshot[];
+  try {
+    screenshots = JSON.parse(trade.screenshots || '[]');
+  } catch {
+    return;
+  }
+  if (!Array.isArray(screenshots) || screenshots.length === 0) return;
+
+  const { dataUrlToBlob } = await import('../db/database');
+
+  await Promise.all(screenshots.map(async shot => {
+    if (!shot?.id) return;
+    const existing = await db.chartScreenshots.get(shot.id);
+    const now = Date.now();
+
+    let imageBlob: Blob | null = existing?.imageBlob ?? null;
+    let dataUrl = shot.dataUrl || '';
+    if (dataUrl && dataUrl.startsWith('data:') && !imageBlob) {
+      try {
+        imageBlob = dataUrlToBlob(dataUrl);
+        dataUrl = '';
+      } catch { /* در صورت شکست تبدیل، dataUrl اصلی نگه داشته می‌شود */ }
+    }
+
+    const record: ChartScreenshot = {
+      id: shot.id,
+      symbol: trade.symbol || null,
+      timeframe: shot.timeframe || null,
+      date: existing?.date ?? new Date(trade.openedAt).toISOString().slice(0, 10),
+      time: existing?.time ?? null,
+      timezone: trade.timezone || null,
+      session: trade.tradingSession || null,
+      direction: trade.direction || null,
+      setup: trade.setupType || null,
+      strategy: existing?.strategy ?? null,
+      tradeId: trade.id,
+      screenshotType: shot.type || 'reference',
+      label: shot.label || null,
+      notes: shot.analysisNotes || null,
+      dataUrl,
+      imageBlob,
+      width: shot.width ?? null,
+      height: shot.height ?? null,
+      fileSize: shot.fileSize ?? null,
+      quality: shot.quality ? JSON.stringify(shot.quality) : null,
+      extractedFeatures: JSON.stringify(shot.extractedFeatures || []),
+      userAddedFeatures: JSON.stringify(shot.userAddedFeatures || []),
+      patternTags: existing?.patternTags ?? '[]',
+      customTags: existing?.customTags ?? '[]',
+      annotations: JSON.stringify(shot.annotations || []),
+      analysisNotes: shot.analysisNotes || null,
+      groupId: existing?.groupId ?? null,
+      collectionIds: existing?.collectionIds ?? '[]',
+      linkedKnowledgeIds: existing?.linkedKnowledgeIds ?? '[]',
+      createdAt: existing?.createdAt ?? shot.createdAt ?? now,
+      updatedAt: now,
+    };
+
+    try {
+      await db.chartScreenshots.put(record);
+    } catch (e: unknown) {
+      // فضای ذخیره‌سازی پر بودن نباید ذخیره‌ی معامله را متوقف کند
+      if ((e as { name?: string })?.name !== 'QuotaExceededError') throw e;
+    }
+  }));
+
+  // اسکرین‌شات‌هایی که از معامله حذف شده‌اند، از کتابخانه هم حذف شوند
+  const currentIds = new Set(screenshots.map(s => s.id));
+  const linked = await db.chartScreenshots.where('tradeId').equals(trade.id).toArray();
+  const toRemove = linked.filter(s => !currentIds.has(s.id)).map(s => s.id);
+  if (toRemove.length > 0) {
+    await db.chartScreenshots.bulkDelete(toRemove);
+  }
+}
 
 export const tradeService = {
   async getAllTrades() {
@@ -108,6 +191,9 @@ export const tradeService = {
       });
     });
 
+    // اسکرین‌شات‌های احتمالی معامله (مثلاً هنگام import) در کتابخانه‌ی هوش اسکرین‌شات هم‌گام شوند
+    await syncTradeScreenshotsToLibrary(trade);
+
     return trade;
   },
 
@@ -147,6 +233,11 @@ export const tradeService = {
         }
       }
     });
+
+    // اسکرین‌شات‌های معامله در صورت تغییر، در کتابخانه‌ی هوش اسکرین‌شات هم‌گام شوند
+    if (data.screenshots !== undefined && data.screenshots !== existing.screenshots) {
+      await syncTradeScreenshotsToLibrary({ ...existing, ...data });
+    }
 
     return db.trades.get(id);
   },
