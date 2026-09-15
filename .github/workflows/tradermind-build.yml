@@ -120,22 +120,38 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Decode release keystore
+        working-directory: artifacts/tradermind
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > tradermind-release.keystore
+
       - name: Create Android platform
         working-directory: artifacts/tradermind
+        env:
+          ANDROID_KEYSTORE_PATH: ../../tradermind-release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: pnpm run android:add
 
       - name: Sync Capacitor Android project
         working-directory: artifacts/tradermind
         run: pnpm run android:sync
 
-      - name: Build debug APK
+      - name: Build release APK
         working-directory: artifacts/tradermind/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: TraderMind-Android-APK
-          path: artifacts/tradermind/android/app/build/outputs/apk/debug/*.apk
+          path: artifacts/tradermind/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
