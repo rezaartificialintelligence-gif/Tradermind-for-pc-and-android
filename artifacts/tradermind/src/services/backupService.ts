@@ -957,8 +957,11 @@ export const backupService = {
       return this.validateLegacyJson(file);
     }
 
-    // PART 8: پشتیبانی از فرمت جدید .gz
-    if (file.name.endsWith('.gz') || file.name.includes('.tradermind-backup')) {
+    // PART 8: پشتیبانی از فرمت gzip خام (فایل واقعاً با .gz تمام شود، نه صرفاً
+    // شامل رشته‌ی «.tradermind-backup» در میانه‌ی نام — چون نام فایل‌های ZIP
+    // صادرشده به‌صورت «...tradermind-backup.zip» است و پیش‌تر اشتباهاً اینجا
+    // به‌عنوان gzip خام تشخیص داده می‌شد و decompress آن‌ها شکست می‌خورد.)
+    if (file.name.endsWith('.gz')) {
       try {
         const jsonStr = await decompressGz(file);
         let parsed: any;
@@ -974,7 +977,7 @@ export const backupService = {
     }
 
     if (!file.name.endsWith('.zip') && file.type !== 'application/zip' && file.type !== 'application/x-zip-compressed') {
-      errors.push('فرمت فایل پشتیبان پشتیبانی نمی‌شود. فایل باید .tradermind-backup.gz، ZIP یا JSON باشد.');
+      errors.push('فرمت فایل پشتیبان پشتیبانی نمی‌شود. فایل باید .gz، ZIP یا JSON باشد.');
       return { valid: false, errors, warnings };
     }
 
