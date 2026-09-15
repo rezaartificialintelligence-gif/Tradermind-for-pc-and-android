@@ -133,4 +133,16 @@ describe('backupService.validateFile — فایل‌های نامعتبر', () =
     const result = await backupService.validateFile(file);
     expect(result.valid).toBe(false);
   });
+
+  it('باید فایل ZIP با نام واقعی خروجی exportAll (شامل ".tradermind-backup" در میانه‌ی نام) را به‌عنوان ZIP معتبر بشناسد، نه gzip خراب', async () => {
+    // نام دقیقاً مطابق الگوی exportAll: `TraderMind_Backup_<date>_<time>.tradermind-backup.zip`
+    // این تست از رگرسیون جلوگیری می‌کند: پیش‌تر شرط validateFile با
+    // file.name.includes('.tradermind-backup') این فایل را اشتباهاً gzip خام
+    // تشخیص می‌داد و decompress آن با خطای «فایل ممکن است آسیب دیده باشد» شکست می‌خورد.
+    const file = await makeValidBackupZip();
+    const renamed = new File([file], 'TraderMind_Backup_2026-01-01_12-00.tradermind-backup.zip', { type: 'application/zip' });
+    const result = await backupService.validateFile(renamed);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
 });
